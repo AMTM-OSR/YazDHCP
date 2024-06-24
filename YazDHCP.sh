@@ -12,7 +12,7 @@
 ##         https://github.com/jackyaz/YazDHCP/          ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2023-Nov-17
+# Last Modified: 2024-Jun-21
 #---------------------------------------------------------
 
 #############################################
@@ -26,8 +26,8 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
-readonly SCRIPT_VERSION="v1.0.6"
-SCRIPT_BRANCH="master"
+readonly SCRIPT_VERSION="v1.0.7"
+SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://jackyaz.io/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
 readonly SCRIPT_CONF="$SCRIPT_DIR/DHCP_clients"
@@ -46,7 +46,8 @@ readonly PASS="\\e[32m"
 ### End of output format variables ###
 
 ### Start of router environment variables ###
-[ -z "$(nvram get odmpid)" ] && ROUTER_MODEL=$(nvram get productid) || ROUTER_MODEL=$(nvram get odmpid)
+[ -z "$(nvram get odmpid)" ] && ROUTER_MODEL="$(nvram get productid)" || ROUTER_MODEL="$(nvram get odmpid)"
+ROUTER_MODEL="$(echo "$ROUTER_MODEL" | tr 'a-z' 'A-Z')"
 ### End of router environment variables ###
 
 ##----------------------------------------------##
@@ -425,30 +426,50 @@ InitCustomUserIconsConfig()
 }
 
 ##-------------------------------------##
-## Added by Martinski W. [2023-Jun-15] ##
+## Added by Martinski W. [2024-Jan-08] ##
 ##-------------------------------------##
+_GetDefaultUSBMountPoint_()
+{
+   local mountPointPath  retCode=0
+   local mountPointRegExp="^/dev/sd.* /tmp/mnt/.*"
+
+   mountPointPath="$(grep -m1 "$mountPointRegExp" /proc/mounts | awk -F ' ' '{print $2}')"
+   [ -z "$mountPointPath" ] && retCode=1
+   echo "$mountPointPath" ; return "$retCode"
+}
+
+##----------------------------------------##
+## Modified by Martinski W. [2024-Jan-08] ##
+##----------------------------------------##
 ValidateUserIconsBackupDirectory()
 {
    if [ $# -eq 0 ] || [ -z "$1" ] ; then return 1; fi
 
-   [ ! -d "$theUserIconsBackupDir" ] && mkdir -m 755 "$theUserIconsBackupDir" 2>/dev/null
-   if [ ! -d "$theUserIconsBackupDir" ]
-   then
-       Print_Output true "**ERROR**: Backup directory [$theUserIconsBackupDir] NOT FOUND." "$ERR"
-       theUserIconsBackupDir="$1"
-       Print_Output true "Trying again with directory [$theUserIconsBackupDir]" "$PASS"
-       switchBackupDir=true
-       return 1
+   [ ! -d "$theUserIconsBackupDir" ] && \
+   mkdir -m 755 "$theUserIconsBackupDir" 2>/dev/null
+   [ -d "$theUserIconsBackupDir" ] && return 0
+
+   local LogTag
+   if [ -z "$defaultUSBMountPoint" ] && \
+      echo "$theUserIconsBackupDir" | grep -qE "^(/tmp/mnt/|/tmp/opt/|/mnt/|/opt/)"
+   then LogTag="**INFO**: "
+   else LogTag="**ERROR**: "
    fi
-   return 0
+
+   Print_Output true "$LogTag Backup directory [$theUserIconsBackupDir] NOT FOUND." "$ERR"
+   Print_Output true "Trying again with directory [$1]" "$PASS"
+   theUserIconsBackupDir="$1"
+   switchBackupDir=true
+   return 1
 }
 
 ##----------------------------------------------##
-## Added/Modified by Martinski W. [2023-Jun-16] ##
+## Added/Modified by Martinski W. [2024-Jan-08] ##
 ##----------------------------------------------##
 GetUserIconsSavedVars()
 {
    switchBackupDir=false
+   defaultUSBMountPoint="$(_GetDefaultUSBMountPoint_)"
    savdUserIconsBackupDir="$(GetFromCustomUserIconsConfig "SAVED_DIR")"
    prefUserIconsBackupDir="$(GetFromCustomUserIconsConfig "PREFS_DIR")"
 
@@ -516,7 +537,7 @@ Check_CustomUserIconsConfig()
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2023-May-31] ##
+## Modified by Martinski W. [2024-Feb-26] ##
 ##----------------------------------------##
 Conf_FromSettings()
 {
@@ -542,6 +563,7 @@ Conf_FromSettings()
 
 			echo "$DHCPCLIENTS" | sed 's/|/:/g;s/></\n/g;s/>/ /g;s/<//g' > /tmp/yazdhcp_clients_parsed.tmp
 
+			RESTART_DNSMASQ=false
 			DO_NVRAM_COMMIT=false
 			echo "MAC,IP,HOSTNAME,DNS" > "$SCRIPT_CONF"
 
@@ -577,11 +599,8 @@ Conf_FromSettings()
 			rm -f /tmp/yazdhcp*
 			rm -f "$SETTINGSFILE.bak"
 
-			RESTART_DNSMASQ="$DO_NVRAM_COMMIT"
+			ProcessDHCPClients "$DO_NVRAM_COMMIT"
 			Check_DHCP_LeaseTime
-			Update_Hostnames
-			Update_Staticlist
-			Update_Optionslist
 			if "$DO_NVRAM_COMMIT" ; then nvram commit ; fi
 
 			Print_Output true "Merge of updated DHCP client information from WebUI completed successfully" "$PASS"
@@ -656,7 +675,7 @@ Update_Check(){
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2023-May-28] ##
+## Modified by Martinski W. [2023-Nov-18] ##
 ##----------------------------------------##
 Update_Version(){
 	if [ $# -eq 0 ] || [ -z "$1" ] || [ "$1" = "unattended" ]; then
@@ -699,7 +718,7 @@ Update_Version(){
 		Download_File "$SCRIPT_REPO/update/$SCRIPT_NAME.sh" "/jffs/scripts/$SCRIPT_NAME" && Print_Output true "$SCRIPT_NAME successfully updated" "$PASS"
 		chmod 0755 /jffs/scripts/"$SCRIPT_NAME"
 		Clear_Lock
-		if [ $# -eq 1 ] || [ -z "$2" ]; then
+		if [ $# -lt 2 ] || [ -z "$2" ]; then
 			exec "$0" setversion
 		elif [ "$2" = "unattended" ]; then
 			exec "$0" setversion unattended
@@ -863,55 +882,95 @@ Auto_Startup(){
 	esac
 }
 
+##----------------------------------------##
+## Modified by Martinski W. [2024-Feb-26] ##
+##----------------------------------------##
 Auto_DNSMASQ(){
+	if [ $# -eq 0 ] || [ -z "$1" ] ; then return 1 ; fi
+
+	if [ $# -gt 1 ] && [ "$2" = "false" ]
+	then doRESTART=false
+	else doRESTART=true
+	fi
+
 	case $1 in
 		create)
-			if [ -f /jffs/configs/dnsmasq.conf.add ]; then
-				CONFCHANGED="false"
-				STARTUPLINECOUNT=$(grep -c "# ${SCRIPT_NAME}_hostnames" /jffs/configs/dnsmasq.conf.add)
-				STARTUPLINECOUNTEX=$(grep -cx "addn-hosts=$SCRIPT_DIR/.hostnames # ${SCRIPT_NAME}_hostnames" /jffs/configs/dnsmasq.conf.add)
+			entryDeleted=0
+			CONFCHANGED="false"
+			ADDN_HOSTSFILE="addn-hosts=$SCRIPT_DIR/.hostnames # ${SCRIPT_NAME}_hostnames"
+			DHCP_HOSTSFILE="dhcp-hostsfile=$SCRIPT_DIR/.staticlist # ${SCRIPT_NAME}_staticlist"
+			DHCP_OPTS_FILE="dhcp-optsfile=$SCRIPT_DIR/.optionslist # ${SCRIPT_NAME}_optionslist"
 
-				if [ "$STARTUPLINECOUNT" -gt 1 ] || { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ]; }; then
+			if [ -f /jffs/configs/dnsmasq.conf.add ]
+			then
+				STARTUPLINECOUNT="$(grep -c "# ${SCRIPT_NAME}_hostnames" /jffs/configs/dnsmasq.conf.add)"
+				STARTUPLINECOUNTEX="$(grep -cx "$ADDN_HOSTSFILE" /jffs/configs/dnsmasq.conf.add)"
+
+				if [ "$STARTUPLINECOUNT" -gt 1 ] || \
+				   { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; } || \
+				   { [ ! -s "$SCRIPT_DIR/.hostnames" ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; }
+				then
 					sed -i -e '/# '"${SCRIPT_NAME}_hostnames"'/d' /jffs/configs/dnsmasq.conf.add
+					entryDeleted="$((entryDeleted | 0x01))"
 				fi
 
-				if [ "$STARTUPLINECOUNTEX" -eq 0 ]; then
-					echo "addn-hosts=$SCRIPT_DIR/.hostnames # ${SCRIPT_NAME}_hostnames" >> /jffs/configs/dnsmasq.conf.add
+				STARTUPLINECOUNTEX="$(grep -cx "$ADDN_HOSTSFILE" /jffs/configs/dnsmasq.conf.add)"
+				if [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ -s "$SCRIPT_DIR/.hostnames" ]
+				then
+					echo "$ADDN_HOSTSFILE" >> /jffs/configs/dnsmasq.conf.add
 					CONFCHANGED="true"
+					entryDeleted="$((entryDeleted & (~0x01)))"
 				fi
 
-				STARTUPLINECOUNT=$(grep -c "# ${SCRIPT_NAME}_staticlist" /jffs/configs/dnsmasq.conf.add)
-				STARTUPLINECOUNTEX=$(grep -cx "dhcp-hostsfile=$SCRIPT_DIR/.staticlist # ${SCRIPT_NAME}_staticlist" /jffs/configs/dnsmasq.conf.add)
+				STARTUPLINECOUNT="$(grep -c "# ${SCRIPT_NAME}_staticlist" /jffs/configs/dnsmasq.conf.add)"
+				STARTUPLINECOUNTEX="$(grep -cx "$DHCP_HOSTSFILE" /jffs/configs/dnsmasq.conf.add)"
 
-				if [ "$STARTUPLINECOUNT" -gt 1 ] || { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ]; }; then
+				if [ "$STARTUPLINECOUNT" -gt 1 ] || \
+				   { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; } || \
+				   { [ ! -s "$SCRIPT_DIR/.staticlist" ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; }
+				then
 					sed -i -e '/# '"${SCRIPT_NAME}_staticlist"'/d' /jffs/configs/dnsmasq.conf.add
+					entryDeleted="$((entryDeleted | 0x02))"
 				fi
 
-				if [ "$STARTUPLINECOUNTEX" -eq 0 ]; then
-					echo "dhcp-hostsfile=$SCRIPT_DIR/.staticlist # ${SCRIPT_NAME}_staticlist" >> /jffs/configs/dnsmasq.conf.add
+				STARTUPLINECOUNTEX="$(grep -cx "$DHCP_HOSTSFILE" /jffs/configs/dnsmasq.conf.add)"
+				if [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ -s "$SCRIPT_DIR/.staticlist" ]
+				then
+					echo "$DHCP_HOSTSFILE" >> /jffs/configs/dnsmasq.conf.add
 					CONFCHANGED="true"
+					entryDeleted="$((entryDeleted & (~0x02)))"
 				fi
 
-				STARTUPLINECOUNT=$(grep -c "# ${SCRIPT_NAME}_optionslist" /jffs/configs/dnsmasq.conf.add)
-				STARTUPLINECOUNTEX=$(grep -cx "dhcp-optsfile=$SCRIPT_DIR/.optionslist # ${SCRIPT_NAME}_optionslist" /jffs/configs/dnsmasq.conf.add)
+				STARTUPLINECOUNT="$(grep -c "# ${SCRIPT_NAME}_optionslist" /jffs/configs/dnsmasq.conf.add)"
+				STARTUPLINECOUNTEX="$(grep -cx "$DHCP_OPTS_FILE" /jffs/configs/dnsmasq.conf.add)"
 
-				if [ "$STARTUPLINECOUNT" -gt 1 ] || { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ]; }; then
+				if [ "$STARTUPLINECOUNT" -gt 1 ] || \
+				   { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; } || \
+				   { [ ! -s "$SCRIPT_DIR/.optionslist" ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; }
+				then
 					sed -i -e '/# '"${SCRIPT_NAME}_optionslist"'/d' /jffs/configs/dnsmasq.conf.add
+					entryDeleted="$((entryDeleted | 0x04))"
 				fi
 
-				if [ "$STARTUPLINECOUNTEX" -eq 0 ]; then
-					echo "dhcp-optsfile=$SCRIPT_DIR/.optionslist # ${SCRIPT_NAME}_optionslist" >> /jffs/configs/dnsmasq.conf.add
+				STARTUPLINECOUNTEX="$(grep -cx "$DHCP_OPTS_FILE" /jffs/configs/dnsmasq.conf.add)"
+				if [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ -s "$SCRIPT_DIR/.optionslist" ]
+				then
+					echo "$DHCP_OPTS_FILE" >> /jffs/configs/dnsmasq.conf.add
 					CONFCHANGED="true"
+					entryDeleted="$((entryDeleted & (~0x04)))"
 				fi
-
-				if [ "$CONFCHANGED" = "true" ]; then
-					service restart_dnsmasq >/dev/null 2>&1
-				fi
+				[ "$((entryDeleted & 0x07))" -gt 0 ] && CONFCHANGED="true"
 			else
-				{ echo ""; echo "addn-hosts=$SCRIPT_DIR/.hostnames # ${SCRIPT_NAME}_hostnames"; echo "dhcp-hostsfile=$SCRIPT_DIR/.staticlist # ${SCRIPT_NAME}_staticlist"; echo "dhcp-optsfile=$SCRIPT_DIR/.optionslist # ${SCRIPT_NAME}_optionslist"; } >> /jffs/configs/dnsmasq.conf.add
+				{
+				  echo ""
+				  [ -s "$SCRIPT_DIR/.hostnames" ] && echo "$ADDN_HOSTSFILE"
+				  [ -s "$SCRIPT_DIR/.staticlist" ] && echo "$DHCP_HOSTSFILE"
+				  [ -s "$SCRIPT_DIR/.optionslist" ] && echo "$DHCP_OPTS_FILE"
+				} >> /jffs/configs/dnsmasq.conf.add
 				chmod 0644 /jffs/configs/dnsmasq.conf.add
-				service restart_dnsmasq >/dev/null 2>&1
+				CONFCHANGED="true"
 			fi
+			"$CONFCHANGED" && "$doRESTART" && service restart_dnsmasq >/dev/null 2>&1
 		;;
 		delete)
 			if [ -f /jffs/configs/dnsmasq.conf.add ]; then
@@ -1962,7 +2021,7 @@ ValidateNVRAMentry()
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2023-Jun-10] ##
+## Modified by Martinski W. [2024-Feb-26] ##
 ##----------------------------------------##
 ### nvram parsing code based on dhcpstaticlist.sh by @Xentrk ###
 Export_FW_DHCP_JFFS()
@@ -2086,12 +2145,7 @@ Export_FW_DHCP_JFFS()
 
 	Print_Output true "DHCP information successfully exported from NVRAM" "$PASS"
 
-	RESTART_DNSMASQ=true
-	Update_Hostnames
-	Update_Staticlist
-	Update_Optionslist
-
-	if "$RESTART_DNSMASQ"
+	if ProcessDHCPClients true
 	then
 		Print_Output true "Restarting dnsmasq for exported DHCP settings to take effect." "$PASS"
 		service restart_dnsmasq >/dev/null 2>&1
@@ -2099,6 +2153,29 @@ Export_FW_DHCP_JFFS()
 	Clear_Lock
 }
 ##################################################################
+
+##----------------------------------------##
+## Modified by Martinski W. [2024-Feb-26] ##
+##----------------------------------------##
+ProcessDHCPClients()
+{
+    local retCode=1
+    if [ $# -gt 0 ] && { [ "$1" = "true" ] || [ "$1" = "false" ] ; }
+    then RESTART_DNSMASQ="$1"
+    else RESTART_DNSMASQ=false
+    fi
+
+    Update_Hostnames
+    Update_Staticlist
+    Update_Optionslist
+
+    if "$RESTART_DNSMASQ"
+    then
+        retCode=0
+        Auto_DNSMASQ create false 2>/dev/null
+    fi
+    return "$retCode"
+}
 
 ##----------------------------------------##
 ## Modified by Martinski W. [2023-Mar-14] ##
@@ -2353,14 +2430,11 @@ Menu_Install(){
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2023-Mar-14] ##
+## Modified by Martinski W. [2024-Feb-26] ##
 ##----------------------------------------##
 Menu_ProcessDHCPClients(){
-	RESTART_DNSMASQ=false
-	Update_Hostnames
-	Update_Staticlist
-	Update_Optionslist
-	if "$RESTART_DNSMASQ" ; then service restart_dnsmasq >/dev/null 2>&1 ; fi
+	if ProcessDHCPClients
+	then service restart_dnsmasq >/dev/null 2>&1 ; fi
 
 	Clear_Lock
 }
@@ -2486,11 +2560,11 @@ Check_Requirements(){
 	fi
 }
 
-##-------------------------------------##
-## Added by Martinski W. [2023-Apr-03] ##
-##-------------------------------------##
+##----------------------------------------##
+## Modified by Martinski W. [2024-Feb-26] ##
+##----------------------------------------##
 # Catch unexpected exit to release lock #
-trap 'Clear_Lock; exit 10' EXIT HUP INT TERM
+trap 'Clear_Lock; exit 10' EXIT HUP INT QUIT ABRT TERM
 
 if [ $# -eq 0 ] || [ -z "$1" ]; then
 	Create_Dirs
