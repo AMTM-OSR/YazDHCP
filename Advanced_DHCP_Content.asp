@@ -43,6 +43,7 @@ thead.collapsible-jquery {
 </style>
 <script language="JavaScript" type="text/javascript" src="/ext/shared-jy/jquery.js"></script>
 <script language="JavaScript" type="text/javascript" src="/ext/shared-jy/d3.js"></script>
+<script language="JavaScript" type="text/javascript" src="/js/jquery.js"></script>
 <script language="JavaScript" type="text/javascript" src="/js/httpApi.js"></script>
 <script language="JavaScript" type="text/javascript" src="/state.js"></script>
 <script language="JavaScript" type="text/javascript" src="/general.js"></script>
@@ -57,7 +58,7 @@ thead.collapsible-jquery {
 <script>
 
 /**---------------------------------------------**/
-/** Last Modified by Martinski W. [2024-Jun-23] **/
+/** Last Modified by Martinski W. [2024-Jun-25] **/
 /**---------------------------------------------**/
 
 const actionScriptPrefix="start_YazDHCP";
