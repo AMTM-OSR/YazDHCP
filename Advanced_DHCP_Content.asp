@@ -1,5 +1,6 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
+<html xmlns:v>
 <head>
 <meta http-equiv="X-UA-Compatible" content="IE=Edge"/>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
@@ -52,14 +53,14 @@ thead.collapsible-jquery {
 <script language="JavaScript" type="text/javascript" src="/ext/shared-jy/detect.js"></script>
 <script language="JavaScript" type="text/javascript" src="/tmhist.js"></script>
 <script language="JavaScript" type="text/javascript" src="/tmmenu.js"></script>
-<script language="JavaScript" type="text/javascript" src="/client_function.js"></script>
 <script language="JavaScript" type="text/javascript" src="/validator.js"></script>
+<script language="JavaScript" type="text/javascript" src="/client_function.js"></script>
 <script language="JavaScript" type="text/javascript" src="/base64.js"></script>
 <script>
 
-/**---------------------------------------------**/
-/** Last Modified by Martinski W. [2024-Jun-25] **/
-/**---------------------------------------------**/
+/**----------------------------------------**/
+/** Modified by Martinski W. [2024-Jun-27] **/
+/**----------------------------------------**/
 
 const actionScriptPrefix="start_YazDHCP";
 
@@ -376,9 +377,12 @@ $(function(){
 	}
 });
 
-/**-------------------------------------**/
-/** Added by Martinski W. [2024-Jun-22] **/
-/**-------------------------------------**/
+/**----------------------------------------**/
+/** Modified by Martinski W. [2024-Jun-27] **/
+/**----------------------------------------**/
+let theProductID = '<% nvram_get("productid"); %>';
+theProductID = theProductID.toUpperCase();
+
 let firmVerStr = '<% nvram_get("firmver"); %>';
 let firmVerNum = parseFloat(firmVerStr.replace(/\./g,""));
 let fwBuildStr = '<% nvram_get("buildno"); %>';
@@ -399,7 +403,8 @@ var manually_dhcp_hosts_array = [];
 
 if(pptpd_support){
 	var pptpd_clients = '<% nvram_get("pptpd_clients"); %>';
-	var pptpd_clients_subnet = pptpd_clients.split(".")[0]+"." + pptpd_clients.split(".")[1]+"." + pptpd_clients.split(".")[2]+".";
+	var pptpd_clients_subnet = pptpd_clients.split(".")[0]+"." +
+	    pptpd_clients.split(".")[1]+"." + pptpd_clients.split(".")[2]+".";
 	var pptpd_clients_start_ip = parseInt(pptpd_clients.split(".")[3].split("-")[0]);
 	var pptpd_clients_end_ip = parseInt(pptpd_clients.split("-")[1]);
 }
@@ -478,7 +483,8 @@ function ErrorCSVExport(){
 	document.getElementById("aExport").href="javascript:alert(\"Error exporting CSV, please refresh the page and try again\")";
 }
 
-function ParseCSVData(data){
+function ParseCSVData(data)
+{
 	dhcp_staticlist_array = [];
 	manually_dhcp_list_array = [];
 	manually_dhcp_list_array_ori = [];
@@ -487,7 +493,8 @@ function ParseCSVData(data){
 	
 	var csvContent = "MAC,IP,HOSTNAME,DNS\n";
 	var settingslength = 0;
-	for(var i = 0; i < data.length; i++){
+	for(var i = 0; i < data.length; i++)
+	{
 		var ipvalue = data[i].IP;
 		if(document.form.lan_netmask.value == "255.255.255.0"){
 			ipvalue = data[i].IP.split(".")[3]
@@ -536,7 +543,8 @@ function ParseCSVData(data){
 		}
 	});
 	
-	for(var i = 0; i < dhcp_staticlist_array.length; i++){
+	for(var i = 0; i < dhcp_staticlist_array.length; i++)
+	{
 		var item_para = {
 			"mac" : dhcp_staticlist_array[i].MAC.toUpperCase(),
 			"dns" : dhcp_staticlist_array[i].DNS,
@@ -1070,11 +1078,13 @@ function Get_DHCP_LeaseConfig()
 var manually_dhcp_sort_type = 0;//0:increase, 1:decrease
 
 /**----------------------------------------**/
-/** Modified by Martinski W. [2023-Jun-14] **/
+/** Modified by Martinski W. [2024-Jun-26] **/
 /**----------------------------------------**/
-function initial(){
+function initial()
+{
 	show_menu();
-	document.getElementById("GWStatic").innerHTML = "Manually Assigned IP addresses in the DHCP scope (Max Limit: )" + maxnumrows;
+	document.getElementById("GWStatic").innerHTML = "Manually Assigned IP addresses in the DHCP scope (Max Limit: Loading...)" + maxnumrows;
+
 	LoadCustomSettings();
 	Get_DHCP_LeaseConfig();
 	GetCustomUserIconsConfig();
@@ -1574,13 +1584,20 @@ function showdhcp_staticlist()
 	}
 }
 
-function applyRule(){
+/**----------------------------------------**/
+/** Modified by Martinski W. [2024-Jun-27] **/
+/**----------------------------------------**/
+function applyRule()
+{
 	cancel_Edit();
-	
-	if(validForm()){
+
+	if (validForm())
+	{
+		document.getElementById("GWStatic").innerHTML = "Manually Assigned IP addresses in the DHCP scope (Max Limit: Loading...)" + maxnumrows;
+
 		dhcp_staticlist_array = [];
 		dhcp_hostnames_array = [];
-		
+
 		Object.keys(manually_dhcp_list_array).forEach(function(key){
 			var ipvalue = key;
 			if(document.form.lan_netmask.value == "255.255.255.0"){
