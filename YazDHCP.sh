@@ -12,7 +12,7 @@
 ##         https://github.com/jackyaz/YazDHCP/          ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2024-Jun-21
+# Last Modified: 2024-Jun-27
 #---------------------------------------------------------
 
 #############################################
@@ -45,9 +45,17 @@ readonly WARN="\\e[33m"
 readonly PASS="\\e[32m"
 ### End of output format variables ###
 
+##----------------------------------------##
+## Modified by Martinski W. [2024-Jun-27] ##
+##----------------------------------------##
+
 ### Start of router environment variables ###
 [ -z "$(nvram get odmpid)" ] && ROUTER_MODEL="$(nvram get productid)" || ROUTER_MODEL="$(nvram get odmpid)"
 ROUTER_MODEL="$(echo "$ROUTER_MODEL" | tr 'a-z' 'A-Z')"
+
+readonly fwInstalledBaseVers="$(nvram get firmver | sed 's/\.//g')"
+readonly fwInstalledBuildVers="$(nvram get buildno)"
+
 ### End of router environment variables ###
 
 ##----------------------------------------------##
@@ -150,9 +158,9 @@ Firmware_Version_Check(){
 }
 
 ### Code for this function courtesy of https://github.com/decoderman- credit to @thelonelycoder ###
-Firmware_Version_Number(){
-	echo "$1" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4); }'
-}
+Firmware_Version_Number()
+{ echo "$1" | awk -F. '{ printf("%d%03d%03d%02d\n", $1,$2,$3,$4); }' ; }
+
 ############################################################################
 
 ### Code for these functions inspired by https://github.com/Adamm00 - credit to @Adamm ###
@@ -1031,7 +1039,7 @@ Shortcut_Script(){
 
 PressEnter(){
 	while true; do
-		printf "Press enter to continue..."
+		printf "Press <Enter> to continue..."
 		read -r key
 		case "$key" in
 			*)
@@ -2021,13 +2029,13 @@ ValidateNVRAMentry()
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2024-Feb-26] ##
+## Modified by Martinski W. [2024-Jun-27] ##
 ##----------------------------------------##
 ### nvram parsing code based on dhcpstaticlist.sh by @Xentrk ###
 Export_FW_DHCP_JFFS()
 {
 	printf "\\n\\e[1mDo you want to export DHCP assignments and hostnames from NVRAM to %s DHCP client files? (y/n)\\e[0m\\n" "$SCRIPT_NAME"
-	printf "%s will backup NVRAM/jffs DHCP data as part of the export\\n" "$SCRIPT_NAME"
+	printf "%s will backup NVRAM/jffs DHCP data as part of the export.\n" "$SCRIPT_NAME"
 	printf "\\n\\e[1mEnter answer (y/n):    \\e[0m"
 	read -r confirm
 	case "$confirm" in
@@ -2046,7 +2054,8 @@ Export_FW_DHCP_JFFS()
 		return 1
 	fi
 
-	if [ "$(Firmware_Version_Number "$(nvram get buildno)")" -lt "$(Firmware_Version_Number 386.4)" ]; then
+	if [ "$(Firmware_Version_Number "${fwInstalledBaseVers}.$fwInstalledBuildVers")" -lt "$(Firmware_Version_Number "3004.386.4")" ]
+	then
 		if [ -f /jffs/nvram/dhcp_hostnames ]; then
 			if [ "$(wc -m < /jffs/nvram/dhcp_hostnames)" -le 1 ]; then
 				Print_Output true "DHCP hostnames not exported from NVRAM, no data found" "$PASS"
@@ -2253,11 +2262,11 @@ ScriptHeader(){
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2023-May-28] ##
+## Modified by Martinski W. [2024-Jun-27] ##
 ##----------------------------------------##
 MainMenu()
 {
-	printf "1.    Process %s\\n\\n" "$SCRIPT_CONF"
+	printf "1.    Process ${GRNct}${SCRIPT_CONF}${NOct}\n\n"
 
 	if CheckForCustomIconFiles || CheckForSavedIconFiles
 	then
@@ -2268,7 +2277,7 @@ MainMenu()
 	if [ "$(nvram get dhcp_staticlist | wc -m)" -le 1 ]; then
 		showexport="false"
 	fi
-	if [ "$(Firmware_Version_Number "$(nvram get buildno)")" -lt "$(Firmware_Version_Number 386.4)" ]
+	if [ "$(Firmware_Version_Number "${fwInstalledBaseVers}.$fwInstalledBuildVers")" -lt "$(Firmware_Version_Number "3004.386.4")" ]
 	then
 		if [ -f /jffs/nvram/dhcp_hostnames ]; then
 			if [ "$(wc -m < /jffs/nvram/dhcp_hostnames)" -le 1 ]; then
@@ -2279,10 +2288,10 @@ MainMenu()
 		fi
 	fi
 	if [ "$showexport" = "true" ]; then
-		printf "x.    Export nvram to %s\\n\\n" "$SCRIPT_NAME"
+		printf "x.    Export DHCP assignments from NVRAM to %s\n\n" "$SCRIPT_NAME"
 	fi
 	printf "u.    Check for updates\\n"
-	printf "uf.   Update %s with latest version (force update)\\n\\n" "$SCRIPT_NAME"
+	printf "uf.   Update %s with latest version (force update)\n\n" "$SCRIPT_NAME"
 	printf "e.    Exit %s\\n\\n" "$SCRIPT_NAME"
 	printf "z.    Uninstall %s\\n" "$SCRIPT_NAME"
 	printf "\\n"
