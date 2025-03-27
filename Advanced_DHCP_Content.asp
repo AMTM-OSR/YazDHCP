@@ -42,10 +42,9 @@ thead.collapsible-jquery {
   background-color: darkred !important;
 }
 </style>
-<script language="JavaScript" type="text/javascript" src="/ext/shared-jy/jquery.js"></script>
-<script language="JavaScript" type="text/javascript" src="/ext/shared-jy/d3.js"></script>
 <script language="JavaScript" type="text/javascript" src="/js/jquery.js"></script>
 <script language="JavaScript" type="text/javascript" src="/js/httpApi.js"></script>
+<script language="JavaScript" type="text/javascript" src="/ext/shared-jy/d3.js"></script>
 <script language="JavaScript" type="text/javascript" src="/state.js"></script>
 <script language="JavaScript" type="text/javascript" src="/general.js"></script>
 <script language="JavaScript" type="text/javascript" src="/popup.js"></script>
@@ -53,16 +52,16 @@ thead.collapsible-jquery {
 <script language="JavaScript" type="text/javascript" src="/ext/shared-jy/detect.js"></script>
 <script language="JavaScript" type="text/javascript" src="/tmhist.js"></script>
 <script language="JavaScript" type="text/javascript" src="/tmmenu.js"></script>
-<script language="JavaScript" type="text/javascript" src="/validator.js"></script>
 <script language="JavaScript" type="text/javascript" src="/client_function.js"></script>
+<script language="JavaScript" type="text/javascript" src="/validator.js"></script>
 <script language="JavaScript" type="text/javascript" src="/base64.js"></script>
 <script>
 
 /**----------------------------------------**/
-/** Modified by Martinski W. [2024-Jun-27] **/
+/** Modified by Martinski W. [2025-Mar-17] **/
 /**----------------------------------------**/
 
-const actionScriptPrefix="start_YazDHCP";
+const actionScriptPrefix = "start_YazDHCP";
 
 /**----------------------------------------------**/
 /** Added/modified by Martinski W. [2023-Jan-28] **/
