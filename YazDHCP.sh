@@ -12,12 +12,14 @@
 ##         https://github.com/jackyaz/YazDHCP/          ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2023-Nov-17
+# Last Modified: 2025-May-18
 #---------------------------------------------------------
 
 #############################################
 # shellcheck disable=SC2012
 # shellcheck disable=SC2016
+# shellcheck disable=SC2018
+# shellcheck disable=SC2019
 # shellcheck disable=SC2059
 # shellcheck disable=SC2155
 # shellcheck disable=SC3043
@@ -26,15 +28,15 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
-readonly SCRIPT_VERSION="v1.0.6"
-SCRIPT_BRANCH="master"
-SCRIPT_REPO="https://jackyaz.io/$SCRIPT_NAME/$SCRIPT_BRANCH"
+readonly SCRIPT_VERSION="v1.0.7"
+SCRIPT_BRANCH="develop"
+SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
 readonly SCRIPT_CONF="$SCRIPT_DIR/DHCP_clients"
-readonly SCRIPT_WEBPAGE_DIR="$(readlink /www/user)"
+readonly SCRIPT_WEBPAGE_DIR="$(readlink -f /www/user)"
 readonly SCRIPT_WEB_DIR="$SCRIPT_WEBPAGE_DIR/$SCRIPT_NAME"
 readonly SHARED_DIR="/jffs/addons/shared-jy"
-readonly SHARED_REPO="https://jackyaz.io/shared-jy/master"
+readonly SHARED_REPO="https://raw.githubusercontent.com/AMTM-OSR/shared-jy/master"
 readonly SHARED_WEB_DIR="$SCRIPT_WEBPAGE_DIR/shared-jy"
 ### End of script variables ###
 
@@ -43,10 +45,29 @@ readonly CRIT="\\e[41m"
 readonly ERR="\\e[31m"
 readonly WARN="\\e[33m"
 readonly PASS="\\e[32m"
+readonly BOLD="\\e[1m"
+readonly CLEARct="\\e[0m"
 ### End of output format variables ###
 
+##----------------------------------------##
+## Modified by Martinski W. [2024-Jun-27] ##
+##----------------------------------------##
+
 ### Start of router environment variables ###
-[ -z "$(nvram get odmpid)" ] && ROUTER_MODEL=$(nvram get productid) || ROUTER_MODEL=$(nvram get odmpid)
+[ -z "$(nvram get odmpid)" ] && ROUTER_MODEL="$(nvram get productid)" || ROUTER_MODEL="$(nvram get odmpid)"
+ROUTER_MODEL="$(echo "$ROUTER_MODEL" | tr 'a-z' 'A-Z')"
+
+##----------------------------------------##
+## Modified by Martinski W. [2025-Mar-16] ##
+##----------------------------------------##
+readonly fwInstalledBaseVers="$(nvram get firmver | sed 's/\.//g')"
+readonly fwInstalledBuildVers="$(nvram get buildno)"
+readonly fwInstalledBranchVer="${fwInstalledBaseVers}.${fwInstalledBuildVers}"
+readonly scriptVersRegExp="v[0-9]{1,2}([.][0-9]{1,2})([.][0-9]{1,2})"
+
+# Give higher priority to built-in binaries #
+export PATH="/bin:/usr/bin:/sbin:/usr/sbin:$PATH"
+
 ### End of router environment variables ###
 
 ##----------------------------------------------##
@@ -101,14 +122,13 @@ readonly theMinUserIconsBackupFiles=5
 readonly theMaxUserIconsBackupFiles=50
 readonly defMaxUserIconsBackupFiles=20
 
-readonly NOct="\033[0m"
-readonly BOLDtext="\033[1m"
-readonly DarkRED="\033[0;31m"
-readonly LghtGREEN="\033[1;32m"
-readonly LghtYELLOW="\033[1;33m"
-readonly REDct="${DarkRED}${BOLDtext}"
+readonly CLRct="\e[0m"
+readonly BOLDtext="\e[1m"
+readonly LghtRED="\e[1;31m"
+readonly LghtGREEN="\e[1;32m"
+readonly REDct="${LghtRED}${BOLDtext}"
 readonly GRNct="${LghtGREEN}${BOLDtext}"
-readonly YLWct="${LghtYELLOW}${BOLDtext}"
+readonly WarnBYLWct="\e[30;103m"
 
 readonly MaxBckupsOpt="mx"
 readonly BackupDirOpt="dp"
@@ -130,17 +150,33 @@ theBackupFilesMatch="${userIconsBackupFPath}_*.$userIconsSavedFLEextn"
 ## End of script variables for the "Save Custom User Icons" feature ##
 ##==================================================================##
 
+##----------------------------------------##
+## Modified by Martinski W. [2025-Mar-16] ##
+##----------------------------------------##
 # $1 = print to syslog, $2 = message to print, $3 = log level
-Print_Output(){
-	if [ "$1" = "true" ]; then
-		logger -t "$SCRIPT_NAME" "$2"
-		printf "\\e[1m$3%s: $2\\e[0m\\n\\n" "$SCRIPT_NAME"
-	else
-		printf "\\e[1m$3%s: $2\\e[0m\\n\\n" "$SCRIPT_NAME"
+Print_Output()
+{
+	local prioStr  prioNum
+	if [ $# -gt 2 ] && [ -n "$3" ]
+	then prioStr="$3"
+	else prioStr="NOTICE"
 	fi
+	if [ "$1" = "true" ]
+	then
+		case "$prioStr" in
+		    "$CRIT") prioNum=2 ;;
+		     "$ERR") prioNum=3 ;;
+		    "$WARN") prioNum=4 ;;
+		    "$PASS") prioNum=6 ;; #INFO#
+		          *) prioNum=5 ;; #NOTICE#
+		esac
+		logger -t "${SCRIPT_NAME}_[$$]" -p $prioNum "$2"
+	fi
+	printf "${BOLD}${3}%s${CLEARct}\n\n" "$2"
 }
 
-Firmware_Version_Check(){
+Firmware_Version_Check()
+{
 	if nvram get rc_support | grep -qF "am_addons"; then
 		return 0
 	else
@@ -149,16 +185,19 @@ Firmware_Version_Check(){
 }
 
 ### Code for this function courtesy of https://github.com/decoderman- credit to @thelonelycoder ###
-Firmware_Version_Number(){
-	echo "$1" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4); }'
-}
+Firmware_Version_Number()
+{ echo "$1" | awk -F. '{ printf("%d%03d%03d%02d\n", $1,$2,$3,$4); }' ; }
+
 ############################################################################
 
 ### Code for these functions inspired by https://github.com/Adamm00 - credit to @Adamm ###
-Check_Lock(){
-	if [ -f "/tmp/$SCRIPT_NAME.lock" ]; then
+Check_Lock()
+{
+	if [ -f "/tmp/$SCRIPT_NAME.lock" ]
+	then
 		ageoflock=$(($(date +%s) - $(date +%s -r /tmp/$SCRIPT_NAME.lock)))
-		if [ "$ageoflock" -gt 600 ]; then
+		if [ "$ageoflock" -gt 600 ]
+		then
 			Print_Output true "Stale lock file found (>600 seconds old) - purging lock" "$ERR"
 			kill "$(sed -n '1p' /tmp/$SCRIPT_NAME.lock)" >/dev/null 2>&1
 			Clear_Lock
@@ -187,9 +226,12 @@ Clear_Lock(){
 }
 ############################################################################
 
-Validate_IP(){
-	if expr "$1" : '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null; then
-		for i in 1 2 3 4; do
+Validate_IP()
+{
+	if expr "$1" : '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null
+	then
+		for i in 1 2 3 4
+		do
 			if [ "$(echo "$1" | cut -d. -f$i)" -gt 255 ]; then
 				Print_Output false "Octet $i ($(echo "$1" | cut -d. -f$i)) - is invalid, must be less than 255" "$ERR"
 				return 1
@@ -425,30 +467,50 @@ InitCustomUserIconsConfig()
 }
 
 ##-------------------------------------##
-## Added by Martinski W. [2023-Jun-15] ##
+## Added by Martinski W. [2024-Jan-08] ##
 ##-------------------------------------##
+_GetDefaultUSBMountPoint_()
+{
+   local mountPointPath  retCode=0
+   local mountPointRegExp="^/dev/sd.* /tmp/mnt/.*"
+
+   mountPointPath="$(grep -m1 "$mountPointRegExp" /proc/mounts | awk -F ' ' '{print $2}')"
+   [ -z "$mountPointPath" ] && retCode=1
+   echo "$mountPointPath" ; return "$retCode"
+}
+
+##----------------------------------------##
+## Modified by Martinski W. [2024-Jan-08] ##
+##----------------------------------------##
 ValidateUserIconsBackupDirectory()
 {
    if [ $# -eq 0 ] || [ -z "$1" ] ; then return 1; fi
 
-   [ ! -d "$theUserIconsBackupDir" ] && mkdir -m 755 "$theUserIconsBackupDir" 2>/dev/null
-   if [ ! -d "$theUserIconsBackupDir" ]
-   then
-       Print_Output true "**ERROR**: Backup directory [$theUserIconsBackupDir] NOT FOUND." "$ERR"
-       theUserIconsBackupDir="$1"
-       Print_Output true "Trying again with directory [$theUserIconsBackupDir]" "$PASS"
-       switchBackupDir=true
-       return 1
+   [ ! -d "$theUserIconsBackupDir" ] && \
+   mkdir -m 755 "$theUserIconsBackupDir" 2>/dev/null
+   [ -d "$theUserIconsBackupDir" ] && return 0
+
+   local LogTag
+   if [ -z "$defaultUSBMountPoint" ] && \
+      echo "$theUserIconsBackupDir" | grep -qE "^(/tmp/mnt/|/tmp/opt/|/mnt/|/opt/)"
+   then LogTag="**INFO**: "
+   else LogTag="**ERROR**: "
    fi
-   return 0
+
+   Print_Output true "$LogTag Backup directory [$theUserIconsBackupDir] NOT FOUND." "$ERR"
+   Print_Output true "Trying again with directory [$1]" "$PASS"
+   theUserIconsBackupDir="$1"
+   switchBackupDir=true
+   return 1
 }
 
 ##----------------------------------------------##
-## Added/Modified by Martinski W. [2023-Jun-16] ##
+## Added/Modified by Martinski W. [2024-Jan-08] ##
 ##----------------------------------------------##
 GetUserIconsSavedVars()
 {
    switchBackupDir=false
+   defaultUSBMountPoint="$(_GetDefaultUSBMountPoint_)"
    savdUserIconsBackupDir="$(GetFromCustomUserIconsConfig "SAVED_DIR")"
    prefUserIconsBackupDir="$(GetFromCustomUserIconsConfig "PREFS_DIR")"
 
@@ -516,14 +578,16 @@ Check_CustomUserIconsConfig()
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2023-May-31] ##
+## Modified by Martinski W. [2024-Feb-26] ##
 ##----------------------------------------##
 Conf_FromSettings()
 {
 	SETTINGSFILE="/jffs/addons/custom_settings.txt"
 	TMPFILE="/tmp/yazdhcp_clients.tmp"
-	if [ -f "$SETTINGSFILE" ]; then
-		if [ "$(grep -E "yazdhcp_|^$YazDHCP_LEASEtag" $SETTINGSFILE | grep -v "version" -c)" -gt 0 ]; then
+	if [ -f "$SETTINGSFILE" ]
+	then
+		if [ "$(grep -E "yazdhcp_|^$YazDHCP_LEASEtag" $SETTINGSFILE | grep -v "version" -c)" -gt 0 ]
+		then
 			Print_Output true "Updated DHCP information from WebUI found, merging into $SCRIPT_CONF" "$PASS"
 			cp -a "$SCRIPT_CONF" "$SCRIPT_CONF.bak"
 			grep -E "yazdhcp_|^$YazDHCP_LEASEtag" "$SETTINGSFILE" | grep -v "version" > "$TMPFILE"
@@ -542,6 +606,7 @@ Conf_FromSettings()
 
 			echo "$DHCPCLIENTS" | sed 's/|/:/g;s/></\n/g;s/>/ /g;s/<//g' > /tmp/yazdhcp_clients_parsed.tmp
 
+			RESTART_DNSMASQ=false
 			DO_NVRAM_COMMIT=false
 			echo "MAC,IP,HOSTNAME,DNS" > "$SCRIPT_CONF"
 
@@ -577,11 +642,8 @@ Conf_FromSettings()
 			rm -f /tmp/yazdhcp*
 			rm -f "$SETTINGSFILE.bak"
 
-			RESTART_DNSMASQ="$DO_NVRAM_COMMIT"
+			ProcessDHCPClients "$DO_NVRAM_COMMIT"
 			Check_DHCP_LeaseTime
-			Update_Hostnames
-			Update_Staticlist
-			Update_Optionslist
 			if "$DO_NVRAM_COMMIT" ; then nvram commit ; fi
 
 			Print_Output true "Merge of updated DHCP client information from WebUI completed successfully" "$PASS"
@@ -598,14 +660,21 @@ Conf_FromSettings()
 	fi
 }
 
-Set_Version_Custom_Settings(){
+##----------------------------------------##
+## Modified by Martinski W. [2025-Mar-17] ##
+##----------------------------------------##
+Set_Version_Custom_Settings()
+{
 	SETTINGSFILE="/jffs/addons/custom_settings.txt"
 	case "$1" in
 		local)
-			if [ -f "$SETTINGSFILE" ]; then
-				if [ "$(grep -c "yazdhcp_version_local" $SETTINGSFILE)" -gt 0 ]; then
-					if [ "$SCRIPT_VERSION" != "$(grep "yazdhcp_version_local" /jffs/addons/custom_settings.txt | cut -f2 -d' ')" ]; then
-						sed -i "s/yazdhcp_version_local.*/yazdhcp_version_local $SCRIPT_VERSION/" "$SETTINGSFILE"
+			if [ -f "$SETTINGSFILE" ]
+			then
+				if [ "$(grep -c "^yazdhcp_version_local" "$SETTINGSFILE")" -gt 0 ]
+				then
+					if [ "$SCRIPT_VERSION" != "$(grep "^yazdhcp_version_local" "$SETTINGSFILE" | cut -f2 -d' ')" ]
+					then
+						sed -i "s/^yazdhcp_version_local.*/yazdhcp_version_local $SCRIPT_VERSION/" "$SETTINGSFILE"
 					fi
 				else
 					echo "yazdhcp_version_local $SCRIPT_VERSION" >> "$SETTINGSFILE"
@@ -615,10 +684,13 @@ Set_Version_Custom_Settings(){
 			fi
 		;;
 		server)
-			if [ -f "$SETTINGSFILE" ]; then
-				if [ "$(grep -c "yazdhcp_version_server" $SETTINGSFILE)" -gt 0 ]; then
-					if [ "$2" != "$(grep "yazdhcp_version_server" /jffs/addons/custom_settings.txt | cut -f2 -d' ')" ]; then
-						sed -i "s/yazdhcp_version_server.*/yazdhcp_version_server $2/" "$SETTINGSFILE"
+			if [ -f "$SETTINGSFILE" ]
+			then
+				if [ "$(grep -c "^yazdhcp_version_server" "$SETTINGSFILE")" -gt 0 ]
+				then
+					if [ "$2" != "$(grep "^yazdhcp_version_server" "$SETTINGSFILE" | cut -f2 -d' ')" ]
+					then
+						sed -i "s/^yazdhcp_version_server.*/yazdhcp_version_server $2/" "$SETTINGSFILE"
 					fi
 				else
 					echo "yazdhcp_version_server $2" >> "$SETTINGSFILE"
@@ -630,36 +702,45 @@ Set_Version_Custom_Settings(){
 	esac
 }
 
-Update_Check(){
+##----------------------------------------##
+## Modified by Martinski W. [2025-Mar-16] ##
+##----------------------------------------##
+Update_Check()
+{
 	echo 'var updatestatus = "InProgress";' > "$SCRIPT_WEB_DIR/detect_update.js"
 	doupdate="false"
-	localver=$(grep "SCRIPT_VERSION=" /jffs/scripts/"$SCRIPT_NAME" | grep -m1 -oE 'v[0-9]{1,2}([.][0-9]{1,2})([.][0-9]{1,2})')
-	/usr/sbin/curl -fsL --retry 3 "$SCRIPT_REPO/404/$SCRIPT_NAME.sh" | grep -qF "jackyaz" || { Print_Output true "404 error detected - stopping update" "$ERR"; return 1; }
-	serverver=$(/usr/sbin/curl -fsL --retry 3 "$SCRIPT_REPO/version/$SCRIPT_NAME.sh" | grep "SCRIPT_VERSION=" | grep -m1 -oE 'v[0-9]{1,2}([.][0-9]{1,2})([.][0-9]{1,2})')
-	if [ "$localver" != "$serverver" ]; then
+	localver="$(grep "SCRIPT_VERSION=" /jffs/scripts/"$SCRIPT_NAME" | grep -m1 -oE "$scriptVersRegExp")"
+	curl -fsL --retry 4 --retry-delay 5 "$SCRIPT_REPO/404/$SCRIPT_NAME.sh" | grep -qF "jackyaz" || \
+	{ Print_Output true "404 error detected - stopping update" "$ERR"; return 1; }
+	serverver="$(curl -fsL --retry 4 --retry-delay 5 "$SCRIPT_REPO/version/$SCRIPT_NAME.sh" | grep "SCRIPT_VERSION=" | grep -m1 -oE "$scriptVersRegExp")"
+	if [ "$localver" != "$serverver" ]
+	then
 		doupdate="version"
 		Set_Version_Custom_Settings server "$serverver"
 		echo 'var updatestatus = "'"$serverver"'";'  > "$SCRIPT_WEB_DIR/detect_update.js"
 	else
 		localmd5="$(md5sum "/jffs/scripts/$SCRIPT_NAME" | awk '{print $1}')"
-		remotemd5="$(curl -fsL --retry 3 "$SCRIPT_REPO/md5/$SCRIPT_NAME.sh" | md5sum | awk '{print $1}')"
-		if [ "$localmd5" != "$remotemd5" ]; then
+		remotemd5="$(curl -fsL --retry 4 --retry-delay 5 "$SCRIPT_REPO/md5/$SCRIPT_NAME.sh" | md5sum | awk '{print $1}')"
+		if [ "$localmd5" != "$remotemd5" ]
+		then
 			doupdate="md5"
 			Set_Version_Custom_Settings server "$serverver-hotfix"
 			echo 'var updatestatus = "'"$serverver-hotfix"'";'  > "$SCRIPT_WEB_DIR/detect_update.js"
 		fi
 	fi
 	if [ "$doupdate" = "false" ]; then
-		echo 'var updatestatus = "None";'  > "$SCRIPT_WEB_DIR/detect_update.js"
+		echo 'var updatestatus = "None";' > "$SCRIPT_WEB_DIR/detect_update.js"
 	fi
 	echo "$doupdate,$localver,$serverver"
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2023-May-28] ##
+## Modified by Martinski W. [2025-Mar-16] ##
 ##----------------------------------------##
-Update_Version(){
-	if [ $# -eq 0 ] || [ -z "$1" ] || [ "$1" = "unattended" ]; then
+Update_Version()
+{
+	if [ $# -eq 0 ] || [ -z "$1" ] || [ "$1" = "unattended" ]
+	then
 		updatecheckresult="$(Update_Check)"
 		isupdate="$(echo "$updatecheckresult" | cut -f1 -d',')"
 		localver="$(echo "$updatecheckresult" | cut -f2 -d',')"
@@ -673,15 +754,19 @@ Update_Version(){
 
 		Update_File shared-jy.tar.gz
 
-		if [ "$isupdate" != "false" ]; then
+		if [ "$isupdate" != "false" ]
+		then
 			Update_File Advanced_DHCP_Content.asp
 
-			Download_File "$SCRIPT_REPO/update/$SCRIPT_NAME.sh" "/jffs/scripts/$SCRIPT_NAME" && Print_Output true "$SCRIPT_NAME successfully updated" "$PASS"
+			Download_File "$SCRIPT_REPO/update/$SCRIPT_NAME.sh" "/jffs/scripts/$SCRIPT_NAME" && \
+			Print_Output true "$SCRIPT_NAME successfully updated" "$PASS"
 			chmod 0755 /jffs/scripts/"$SCRIPT_NAME"
 			Clear_Lock
-			if [ -z "$1" ]; then
+			if [ -z "$1" ]
+			then
 				exec "$0" setversion
-			elif [ "$1" = "unattended" ]; then
+			elif [ "$1" = "unattended" ]
+			then
 				exec "$0" setversion unattended
 			fi
 			exit 0
@@ -691,35 +776,54 @@ Update_Version(){
 		fi
 	fi
 
-	if [ $# -gt 0 ] && [ "$1" = "force" ]; then
-		serverver=$(/usr/sbin/curl -fsL --retry 3 "$SCRIPT_REPO/version/$SCRIPT_NAME.sh" | grep "SCRIPT_VERSION=" | grep -m1 -oE 'v[0-9]{1,2}([.][0-9]{1,2})([.][0-9]{1,2})')
+	if [ $# -gt 0 ] && [ "$1" = "force" ]
+	then
+		serverver="$(curl -fsL --retry 4 --retry-delay 5 "$SCRIPT_REPO/version/$SCRIPT_NAME.sh" | grep "SCRIPT_VERSION=" | grep -m1 -oE "$scriptVersRegExp")"
 		Print_Output true "Downloading latest version ($serverver) of $SCRIPT_NAME" "$PASS"
 		Update_File Advanced_DHCP_Content.asp
 		Update_File shared-jy.tar.gz
-		Download_File "$SCRIPT_REPO/update/$SCRIPT_NAME.sh" "/jffs/scripts/$SCRIPT_NAME" && Print_Output true "$SCRIPT_NAME successfully updated" "$PASS"
+		Download_File "$SCRIPT_REPO/update/$SCRIPT_NAME.sh" "/jffs/scripts/$SCRIPT_NAME" && \
+		Print_Output true "$SCRIPT_NAME successfully updated" "$PASS"
 		chmod 0755 /jffs/scripts/"$SCRIPT_NAME"
 		Clear_Lock
-		if [ $# -eq 1 ] || [ -z "$2" ]; then
+		if [ $# -lt 2 ] || [ -z "$2" ]
+		then
 			exec "$0" setversion
-		elif [ "$2" = "unattended" ]; then
+		elif [ "$2" = "unattended" ]
+		then
 			exec "$0" setversion unattended
 		fi
 		exit 0
 	fi
 }
 
-Update_File(){
-	if [ "$1" = "Advanced_DHCP_Content.asp" ]; then
+##----------------------------------------##
+## Modified by Martinski W. [2025-Mar-16] ##
+##----------------------------------------##
+Update_File()
+{
+	if [ "$1" = "Advanced_DHCP_Content.asp" ]
+	then
 		tmpfile="/tmp/$1"
-		Download_File "$SCRIPT_REPO/files/$1" "$tmpfile"
-		if ! diff -q "$tmpfile" "$SCRIPT_DIR/$1" >/dev/null 2>&1; then
+		if [ -f "$SCRIPT_DIR/$1" ]
+		then
+			Download_File "$SCRIPT_REPO/files/$1" "$tmpfile"
+			if ! diff -q "$tmpfile" "$SCRIPT_DIR/$1" >/dev/null 2>&1
+			then
+				Download_File "$SCRIPT_REPO/files/$1" "$SCRIPT_DIR/$1"
+				Print_Output true "New version of $1 downloaded" "$PASS"
+				Mount_WebUI
+			fi
+			rm -f "$tmpfile"
+		else
 			Download_File "$SCRIPT_REPO/files/$1" "$SCRIPT_DIR/$1"
 			Print_Output true "New version of $1 downloaded" "$PASS"
 			Mount_WebUI
 		fi
-		rm -f "$tmpfile"
-	elif [ "$1" = "shared-jy.tar.gz" ]; then
-		if [ ! -f "$SHARED_DIR/$1.md5" ]; then
+	elif [ "$1" = "shared-jy.tar.gz" ]
+	then
+		if [ ! -f "$SHARED_DIR/$1.md5" ]
+		then
 			Download_File "$SHARED_REPO/$1" "$SHARED_DIR/$1"
 			Download_File "$SHARED_REPO/$1.md5" "$SHARED_DIR/$1.md5"
 			tar -xzf "$SHARED_DIR/$1" -C "$SHARED_DIR"
@@ -727,8 +831,9 @@ Update_File(){
 			Print_Output true "New version of $1 downloaded" "$PASS"
 		else
 			localmd5="$(cat "$SHARED_DIR/$1.md5")"
-			remotemd5="$(curl -fsL --retry 3 "$SHARED_REPO/$1.md5")"
-			if [ "$localmd5" != "$remotemd5" ]; then
+			remotemd5="$(curl -fsL --retry 4 --retry-delay 5 "$SHARED_REPO/$1.md5")"
+			if [ "$localmd5" != "$remotemd5" ]
+			then
 				Download_File "$SHARED_REPO/$1" "$SHARED_DIR/$1"
 				Download_File "$SHARED_REPO/$1.md5" "$SHARED_DIR/$1.md5"
 				tar -xzf "$SHARED_DIR/$1" -C "$SHARED_DIR"
@@ -741,7 +846,8 @@ Update_File(){
 	fi
 }
 
-Create_Dirs(){
+Create_Dirs()
+{
 	if [ ! -d "$SCRIPT_DIR" ]; then
 		mkdir -p "$SCRIPT_DIR"
 	fi
@@ -782,7 +888,8 @@ Create_CustomUserIconsConfig()
 ##----------------------------------------##
 ## Modified by Martinski W. [2023-Apr-01] ##
 ##----------------------------------------##
-Create_Symlinks(){
+Create_Symlinks()
+{
 	rm -rf "${SCRIPT_WEB_DIR:?}/"* 2>/dev/null
 
 	ln -s "$SCRIPT_CONF" "$SCRIPT_WEB_DIR/DHCP_clients.htm" 2>/dev/null
@@ -797,7 +904,8 @@ Create_Symlinks(){
 ##----------------------------------------##
 ## Modified by Martinski W. [2023-Mar-14] ##
 ##----------------------------------------##
-Auto_ServiceEvent(){
+Auto_ServiceEvent()
+{
 	case $1 in
 		create)
 			if [ -f /jffs/scripts/service-event ]; then
@@ -830,7 +938,8 @@ Auto_ServiceEvent(){
 	esac
 }
 
-Auto_Startup(){
+Auto_Startup()
+{
 	case $1 in
 		create)
 			if [ -f /jffs/scripts/services-start ]; then
@@ -863,55 +972,96 @@ Auto_Startup(){
 	esac
 }
 
-Auto_DNSMASQ(){
+##----------------------------------------##
+## Modified by Martinski W. [2024-Feb-26] ##
+##----------------------------------------##
+Auto_DNSMASQ()
+{
+	if [ $# -eq 0 ] || [ -z "$1" ] ; then return 1 ; fi
+
+	if [ $# -gt 1 ] && [ "$2" = "false" ]
+	then doRESTART=false
+	else doRESTART=true
+	fi
+
 	case $1 in
 		create)
-			if [ -f /jffs/configs/dnsmasq.conf.add ]; then
-				CONFCHANGED="false"
-				STARTUPLINECOUNT=$(grep -c "# ${SCRIPT_NAME}_hostnames" /jffs/configs/dnsmasq.conf.add)
-				STARTUPLINECOUNTEX=$(grep -cx "addn-hosts=$SCRIPT_DIR/.hostnames # ${SCRIPT_NAME}_hostnames" /jffs/configs/dnsmasq.conf.add)
+			entryDeleted=0
+			CONFCHANGED="false"
+			ADDN_HOSTSFILE="addn-hosts=$SCRIPT_DIR/.hostnames # ${SCRIPT_NAME}_hostnames"
+			DHCP_HOSTSFILE="dhcp-hostsfile=$SCRIPT_DIR/.staticlist # ${SCRIPT_NAME}_staticlist"
+			DHCP_OPTS_FILE="dhcp-optsfile=$SCRIPT_DIR/.optionslist # ${SCRIPT_NAME}_optionslist"
 
-				if [ "$STARTUPLINECOUNT" -gt 1 ] || { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ]; }; then
+			if [ -f /jffs/configs/dnsmasq.conf.add ]
+			then
+				STARTUPLINECOUNT="$(grep -c "# ${SCRIPT_NAME}_hostnames" /jffs/configs/dnsmasq.conf.add)"
+				STARTUPLINECOUNTEX="$(grep -cx "$ADDN_HOSTSFILE" /jffs/configs/dnsmasq.conf.add)"
+
+				if [ "$STARTUPLINECOUNT" -gt 1 ] || \
+				   { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; } || \
+				   { [ ! -s "$SCRIPT_DIR/.hostnames" ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; }
+				then
 					sed -i -e '/# '"${SCRIPT_NAME}_hostnames"'/d' /jffs/configs/dnsmasq.conf.add
+					entryDeleted="$((entryDeleted | 0x01))"
 				fi
 
-				if [ "$STARTUPLINECOUNTEX" -eq 0 ]; then
-					echo "addn-hosts=$SCRIPT_DIR/.hostnames # ${SCRIPT_NAME}_hostnames" >> /jffs/configs/dnsmasq.conf.add
+				STARTUPLINECOUNTEX="$(grep -cx "$ADDN_HOSTSFILE" /jffs/configs/dnsmasq.conf.add)"
+				if [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ -s "$SCRIPT_DIR/.hostnames" ]
+				then
+					echo "$ADDN_HOSTSFILE" >> /jffs/configs/dnsmasq.conf.add
 					CONFCHANGED="true"
+					entryDeleted="$((entryDeleted & (~0x01)))"
 				fi
 
-				STARTUPLINECOUNT=$(grep -c "# ${SCRIPT_NAME}_staticlist" /jffs/configs/dnsmasq.conf.add)
-				STARTUPLINECOUNTEX=$(grep -cx "dhcp-hostsfile=$SCRIPT_DIR/.staticlist # ${SCRIPT_NAME}_staticlist" /jffs/configs/dnsmasq.conf.add)
+				STARTUPLINECOUNT="$(grep -c "# ${SCRIPT_NAME}_staticlist" /jffs/configs/dnsmasq.conf.add)"
+				STARTUPLINECOUNTEX="$(grep -cx "$DHCP_HOSTSFILE" /jffs/configs/dnsmasq.conf.add)"
 
-				if [ "$STARTUPLINECOUNT" -gt 1 ] || { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ]; }; then
+				if [ "$STARTUPLINECOUNT" -gt 1 ] || \
+				   { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; } || \
+				   { [ ! -s "$SCRIPT_DIR/.staticlist" ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; }
+				then
 					sed -i -e '/# '"${SCRIPT_NAME}_staticlist"'/d' /jffs/configs/dnsmasq.conf.add
+					entryDeleted="$((entryDeleted | 0x02))"
 				fi
 
-				if [ "$STARTUPLINECOUNTEX" -eq 0 ]; then
-					echo "dhcp-hostsfile=$SCRIPT_DIR/.staticlist # ${SCRIPT_NAME}_staticlist" >> /jffs/configs/dnsmasq.conf.add
+				STARTUPLINECOUNTEX="$(grep -cx "$DHCP_HOSTSFILE" /jffs/configs/dnsmasq.conf.add)"
+				if [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ -s "$SCRIPT_DIR/.staticlist" ]
+				then
+					echo "$DHCP_HOSTSFILE" >> /jffs/configs/dnsmasq.conf.add
 					CONFCHANGED="true"
+					entryDeleted="$((entryDeleted & (~0x02)))"
 				fi
 
-				STARTUPLINECOUNT=$(grep -c "# ${SCRIPT_NAME}_optionslist" /jffs/configs/dnsmasq.conf.add)
-				STARTUPLINECOUNTEX=$(grep -cx "dhcp-optsfile=$SCRIPT_DIR/.optionslist # ${SCRIPT_NAME}_optionslist" /jffs/configs/dnsmasq.conf.add)
+				STARTUPLINECOUNT="$(grep -c "# ${SCRIPT_NAME}_optionslist" /jffs/configs/dnsmasq.conf.add)"
+				STARTUPLINECOUNTEX="$(grep -cx "$DHCP_OPTS_FILE" /jffs/configs/dnsmasq.conf.add)"
 
-				if [ "$STARTUPLINECOUNT" -gt 1 ] || { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ]; }; then
+				if [ "$STARTUPLINECOUNT" -gt 1 ] || \
+				   { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; } || \
+				   { [ ! -s "$SCRIPT_DIR/.optionslist" ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; }
+				then
 					sed -i -e '/# '"${SCRIPT_NAME}_optionslist"'/d' /jffs/configs/dnsmasq.conf.add
+					entryDeleted="$((entryDeleted | 0x04))"
 				fi
 
-				if [ "$STARTUPLINECOUNTEX" -eq 0 ]; then
-					echo "dhcp-optsfile=$SCRIPT_DIR/.optionslist # ${SCRIPT_NAME}_optionslist" >> /jffs/configs/dnsmasq.conf.add
+				STARTUPLINECOUNTEX="$(grep -cx "$DHCP_OPTS_FILE" /jffs/configs/dnsmasq.conf.add)"
+				if [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ -s "$SCRIPT_DIR/.optionslist" ]
+				then
+					echo "$DHCP_OPTS_FILE" >> /jffs/configs/dnsmasq.conf.add
 					CONFCHANGED="true"
+					entryDeleted="$((entryDeleted & (~0x04)))"
 				fi
-
-				if [ "$CONFCHANGED" = "true" ]; then
-					service restart_dnsmasq >/dev/null 2>&1
-				fi
+				[ "$((entryDeleted & 0x07))" -gt 0 ] && CONFCHANGED="true"
 			else
-				{ echo ""; echo "addn-hosts=$SCRIPT_DIR/.hostnames # ${SCRIPT_NAME}_hostnames"; echo "dhcp-hostsfile=$SCRIPT_DIR/.staticlist # ${SCRIPT_NAME}_staticlist"; echo "dhcp-optsfile=$SCRIPT_DIR/.optionslist # ${SCRIPT_NAME}_optionslist"; } >> /jffs/configs/dnsmasq.conf.add
+				{
+				  echo ""
+				  [ -s "$SCRIPT_DIR/.hostnames" ] && echo "$ADDN_HOSTSFILE"
+				  [ -s "$SCRIPT_DIR/.staticlist" ] && echo "$DHCP_HOSTSFILE"
+				  [ -s "$SCRIPT_DIR/.optionslist" ] && echo "$DHCP_OPTS_FILE"
+				} >> /jffs/configs/dnsmasq.conf.add
 				chmod 0644 /jffs/configs/dnsmasq.conf.add
-				service restart_dnsmasq >/dev/null 2>&1
+				CONFCHANGED="true"
 			fi
+			"$CONFCHANGED" && "$doRESTART" && service restart_dnsmasq >/dev/null 2>&1
 		;;
 		delete)
 			if [ -f /jffs/configs/dnsmasq.conf.add ]; then
@@ -945,16 +1095,34 @@ Auto_DNSMASQ(){
 	esac
 }
 
-Download_File(){
-	/usr/sbin/curl -fsL --retry 3 "$1" -o "$2"
-}
+##----------------------------------------##
+## Modified by Martinski W. [2025-Mar-16] ##
+##----------------------------------------##
+Download_File()
+{ /usr/sbin/curl -LSs --retry 4 --retry-delay 5 --retry-connrefused "$1" -o "$2" ; }
 
-Mount_WebUI(){
+##----------------------------------------##
+## Modified by Martinski W. [2025-Mar-17] ##
+##----------------------------------------##
+Mount_WebUI()
+{
+	Print_Output true "Mounting WebUI tab for $SCRIPT_NAME" "$PASS"
 	umount /www/Advanced_DHCP_Content.asp 2>/dev/null
 	mount -o bind "$SCRIPT_DIR/Advanced_DHCP_Content.asp" /www/Advanced_DHCP_Content.asp
+    Print_Output true "WebUI tab for $SCRIPT_NAME was mounted." "$PASS"
 }
 
-Shortcut_Script(){
+##-------------------------------------##
+## Added by Martinski W. [2025-Mar-17] ##
+##-------------------------------------##
+_CheckFor_WebGUI_Page_()
+{
+   if [ "$(grep -c 'YazDHCP' /www/Advanced_DHCP_Content.asp)" -lt 10 ]
+   then Mount_WebUI ; fi
+}
+
+Shortcut_Script()
+{
 	case $1 in
 		create)
 			if [ -d /opt/bin ] && [ ! -f "/opt/bin/$SCRIPT_NAME" ] && [ -f "/jffs/scripts/$SCRIPT_NAME" ]; then
@@ -970,14 +1138,14 @@ Shortcut_Script(){
 	esac
 }
 
-PressEnter(){
-	while true; do
-		printf "Press enter to continue..."
-		read -r key
+PressEnter()
+{
+	while true
+	do
+		printf "Press <Enter> key to continue..."
+		read -rs key
 		case "$key" in
-			*)
-				break
-			;;
+			*) break ;;
 		esac
 	done
 	return 0
@@ -1063,7 +1231,7 @@ _list2_()
 _WaitForEnterKey_()
 {
    ! "$waitToConfirm" && return 0
-   echo ; read -rsp "Press enter key to continue..." ; echo
+   echo ; read -rsp "Press <Enter> key to continue..." ; echo
 }
 
 _WaitForConfirmation_()
@@ -1211,8 +1379,8 @@ EOT
 
    ! "$waitToConfirm" && return 1
 
-   printf "\n\n${YLWct}**WARNING**${NOct}\n"
-   printf "The number of backup files [${REDct}${theFileCount}${NOct}] exceeds the maximum [${GRNct}${maxUserIconsBackupFiles}${NOct}].\n"
+   printf "\n\n${WarnBYLWct}**WARNING**${CLRct}\n"
+   printf "The number of backup files [${REDct}${theFileCount}${CLRct}] exceeds the maximum [${GRNct}${maxUserIconsBackupFiles}${CLRct}].\n"
    printf "It's highly recommended that you either delete old backup files,\n"
    printf "or move them from the current directory to a different location.\n"
    _WaitForEnterKey_
@@ -1245,7 +1413,7 @@ BackupCustomUserIcons()
        retCode=0
        chmod 664 "$theFilePath"
        UpdateCustomUserIconsConfig SAVED "$theFilePath" STATUSupdate
-       printf "All icon files were successfully saved in:\n[${GRNct}${theFilePath}${NOct}]\n"
+       printf "All icon files were successfully saved in:\n[${GRNct}${theFilePath}${CLRct}]\n"
    fi
    _NVRAM_IconsCleanupFiles_
    CheckForMaxIconsSavedFiles true && _WaitForEnterKey_
@@ -1260,11 +1428,11 @@ _GetFileSelectionIndex_()
    if [ $# -eq 0 ] || [ -z "$1" ] ; then return 1 ; fi
 
    local selectStr  promptStr  numRegEx  indexNum  indexList
-   local multiIndexListOK  theAllStr="${GRNct}all${NOct}"
+   local multiIndexListOK  theAllStr="${GRNct}all${CLRct}"
 
    if [ "$1" -eq 1 ]
-   then selectStr="${GRNct}1${NOct}"
-   else selectStr="${GRNct}1${NOct}-${GRNct}${1}${NOct}"
+   then selectStr="${GRNct}1${CLRct}"
+   else selectStr="${GRNct}1${CLRct}-${GRNct}${1}${CLRct}"
    fi
 
    if [ $# -lt 2 ] || [ "$2" != "-MULTIOK" ]
@@ -1327,7 +1495,7 @@ _GetFileSelectionIndex_()
            "$indecesOK" && fileIndex="$indexList" && multiIndex=true && break
        fi
 
-       printf "${REDct}INVALID selection.${NOct}\n"
+       printf "${REDct}INVALID selection.${CLRct}\n"
    done
 }
 
@@ -1343,14 +1511,14 @@ _GetFileSelection_()
 
    theFilePath=""  theFileName=""  fileTemp=""
    fileCount=0  fileIndex=0  multiIndex=false
-   printf "\n${1}\n[Directory: ${GRNct}${theUserIconsBackupDir}${NOct}]\n\n"
+   printf "\n${1}\n[Directory: ${GRNct}${theUserIconsBackupDir}${CLRct}]\n\n"
 
    while IFS="$(printf '\n\t')" read -r backupFilePath
    do
        fileCount=$((fileCount+1))
        fileVar="file_${fileCount}_Name"
        eval file_${fileCount}_Name="${backupFilePath##*/}"
-       printf "${GRNct}%3d${NOct}. " "$fileCount"
+       printf "${GRNct}%3d${CLRct}. " "$fileCount"
        eval echo "\$${fileVar}"
    done <<EOT
 $(_list2_ -1t "$theBackupFilesMatch" 2>/dev/null)
@@ -1510,10 +1678,10 @@ EOT
        return 1
    fi
 
-   printf "Restoring icon files from:\n[${GRNct}$theFilePath${NOct}]\n"
+   printf "Restoring icon files from:\n[${GRNct}$theFilePath${CLRct}]\n"
    if ! _WaitForConfirmation_ "Please confirm selection"
    then
-       printf "Icon file(s) ${REDct}NOT${NOct} restored.\n"
+       printf "Icon file(s) ${REDct}NOT${CLRct} restored.\n"
        _WaitForEnterKey_
        return 99
    fi
@@ -1527,7 +1695,7 @@ EOT
        retCode=0
        _NVRAM_IconsRestoreKeyValue_
        UpdateCustomUserIconsConfig RESTD "$theFilePath" STATUSupdate
-       printf "All icon files were restored ${GRNct}successfully${NOct}.\n\n"
+       printf "All icon files were restored ${GRNct}successfully${CLRct}.\n\n"
        ls -AlF "$userIconsDIRpath"
    fi
    _WaitForEnterKey_
@@ -1552,14 +1720,14 @@ ListContentsOfSavedIconsFile()
    if [ "$theFilePath" = "NONE" ] || [ ! -f "$theFilePath" ]
    then return 1 ; fi
 
-   printf "Listing contents of backup file:\n[${GRNct}${theFilePath}${NOct}]\n\n"
+   printf "Listing contents of backup file:\n[${GRNct}${theFilePath}${CLRct}]\n\n"
    if tar -tzf "$theFilePath" -C "$theJFFSdir"
    then
        retCode=0
-       printf "\nContents were listed ${GRNct}successfully${NOct}.\n"
+       printf "\nContents were listed ${GRNct}successfully${CLRct}.\n"
    else
        retCode=99
-       printf "\n${REDct}**ERROR**:${NOct} Could NOT list contents.\n"
+       printf "\n${REDct}**ERROR**:${CLRct} Could NOT list contents.\n"
    fi
    _WaitForEnterKey_
    return "$retCode"
@@ -1590,7 +1758,7 @@ DeleteSavedIconsFile()
        delMsg="Deleting backup file(s):"
    else
        fileToDelete="$theBackupFilesMatch"
-       delMsg="Deleting ${REDct}ALL${NOct} backup(s):"
+       delMsg="Deleting ${REDct}ALL${CLRct} backup(s):"
    fi
    if ! "$multiIndex"
    then theFileList="$fileToDelete"
@@ -1599,10 +1767,10 @@ DeleteSavedIconsFile()
        fileToDelete="$theFileList"
    fi
 
-   printf "${delMsg}\n${GRNct}${theFileList}${NOct}\n"
+   printf "${delMsg}\n${GRNct}${theFileList}${CLRct}\n"
    if ! _WaitForConfirmation_ "Please confirm deletion"
    then
-       printf "File(s) ${REDct}NOT${NOct} deleted.\n"
+       printf "File(s) ${REDct}NOT${CLRct} deleted.\n"
        _WaitForEnterKey_
        return 99
    fi
@@ -1617,10 +1785,10 @@ DeleteSavedIconsFile()
    if "$fileDelOK"
    then
        retCode=0
-       printf "File deletion completed ${GRNct}successfully${NOct}.\n"
+       printf "File deletion completed ${GRNct}successfully${CLRct}.\n"
    else
        retCode=99
-       printf "\n${REDct}**ERROR**:${NOct} Could NOT delete file(s).\n"
+       printf "\n${REDct}**ERROR**:${CLRct} Could NOT delete file(s).\n"
    fi
    _WaitForEnterKey_
    return "$retCode"
@@ -1636,7 +1804,7 @@ SetMaxNumberOfBackupFiles()
    while true
    do
        printf "Enter the maximum number of backups of user icons to keep.\n"
-       printf "[${GRNct}${theMinUserIconsBackupFiles}${NOct}-${GRNct}${theMaxUserIconsBackupFiles}${NOct}] | [DEFAULT: ${GRNct}${maxUserIconsBackupFiles}${NOct}] [${theExitStr}]?  "
+       printf "[${GRNct}${theMinUserIconsBackupFiles}${CLRct}-${GRNct}${theMaxUserIconsBackupFiles}${CLRct}] | [DEFAULT: ${GRNct}${maxUserIconsBackupFiles}${CLRct}] [${theExitStr}]?  "
        read -r userInput
 
        if [ -z "$userInput" ] || \
@@ -1648,7 +1816,7 @@ SetMaxNumberOfBackupFiles()
           [ "$userInput" -le "$theMaxUserIconsBackupFiles" ]
        then newMaxNumOfBackups="$userInput" ; break ; fi
 
-       printf "${REDct}INVALID input.${NOct}\n"
+       printf "${REDct}INVALID input.${CLRct}\n"
    done
 
    if [ "$newMaxNumOfBackups" != "DEFAULT" ]
@@ -1668,8 +1836,8 @@ SetCustomUserIconsBackupDirectory()
    echo
    while true
    do
-       printf "Enter the directory path where the backups subdirectory [${GRNct}${userIconsSavedDIRname}${NOct}] will be stored.\n"
-       printf "[DEFAULT: ${GRNct}${theUserIconsBackupDir%/*}${NOct}] [${theExitStr}]?  "
+       printf "Enter the directory path where the backups subdirectory [${GRNct}${userIconsSavedDIRname}${CLRct}] will be stored.\n"
+       printf "[DEFAULT: ${GRNct}${theUserIconsBackupDir%/*}${CLRct}] [${theExitStr}]?  "
        read -r userInput
 
        if [ -z "$userInput" ] || \
@@ -1685,7 +1853,7 @@ SetCustomUserIconsBackupDirectory()
           [ "${#userInput}" -lt 4 ]          || \
           [ "$(echo "$userInput" | awk -F '/' '{print NF-1}')" -lt 2 ]
        then
-           printf "${REDct}INVALID input.${NOct}\n"
+           printf "${REDct}INVALID input.${CLRct}\n"
            continue
        fi
 
@@ -1695,20 +1863,20 @@ SetCustomUserIconsBackupDirectory()
        rootDir="${userInput%/*}"
        if [ ! -d "$rootDir" ]
        then
-           printf "${REDct}**ERROR**:${NOct} Root directory path [$rootDir] does NOT exist.\n"
-           printf "${REDct}INVALID input.${NOct}\n"
+           printf "${REDct}**ERROR**:${CLRct} Root directory path [$rootDir] does NOT exist.\n"
+           printf "${REDct}INVALID input.${CLRct}\n"
            continue
        fi
 
-       printf "The directory path '${REDct}${userInput}${NOct}' does NOT exist.\n"
+       printf "The directory path '${REDct}${userInput}${CLRct}' does NOT exist.\n"
        if ! _WaitForConfirmation_ "Do you want to create it now"
        then
-           printf "Directory was ${REDct}NOT${NOct} created.\n\n"
+           printf "Directory was ${REDct}NOT${CLRct} created.\n\n"
        else
            mkdir -m 755 "$userInput" 2>/dev/null
            if [ -d "$userInput" ]
            then newBackupDirPath="$userInput" ; break
-           else printf "\n${REDct}**ERROR**: Could NOT create directory [$userInput]${NOct}.\n\n"
+           else printf "\n${REDct}**ERROR**: Could NOT create directory [$userInput]${CLRct}.\n\n"
            fi
        fi
    done
@@ -1720,12 +1888,12 @@ SetCustomUserIconsBackupDirectory()
        mkdir -m 755 "$newBackupDirPath" 2>/dev/null
        if [ ! -d "$newBackupDirPath" ]
        then
-           printf "\n${REDct}**ERROR**${NOct}: Could NOT create directory [${REDct}${newBackupDirPath}${NOct}].\n"
+           printf "\n${REDct}**ERROR**${CLRct}: Could NOT create directory [${REDct}${newBackupDirPath}${CLRct}].\n"
            _WaitForEnterKey_ ; return 1
        fi
        if CheckForSavedIconFiles && [ "$newBackupDirPath" != "$theUserIconsBackupDir" ]
        then
-           printf "\nMoving existing backup files to directory:\n[${GRNct}$newBackupDirPath${NOct}]\n"
+           printf "\nMoving existing backup files to directory:\n[${GRNct}$newBackupDirPath${CLRct}]\n"
            if _movef_ "$theBackupFilesMatch" "$newBackupDirPath" && \
               ! CheckForSavedIconFiles
            then rmdir "$theUserIconsBackupDir" 2>/dev/null ; fi
@@ -1749,31 +1917,31 @@ ShowIconsMenuOptions()
    if ! "$iconsFound" && ! "$backupsFound"
    then
        printf "\nNo custom user icon files and no previously saved backup files were found.\n"
-       printf "${REDct}Exiting to main menu...${NOct}\n"
+       printf "${REDct}Exiting to main menu...${CLRct}\n"
        _WaitForEnterKey_
        printf "\n${SEPstr}\n"
        return 1
    fi
 
-   printf "\n ${YLWct}${MaxBckupsOpt}${NOct}.  Maximum number of backups of icon files to keep."
-   printf "\n      [Current Max: ${GRNct}${maxUserIconsBackupFiles}${NOct}]\n"
+   printf "\n ${GRNct}${MaxBckupsOpt}${CLRct}.  Maximum number of backups of icon files to keep."
+   printf "\n      [Current Max: ${GRNct}${maxUserIconsBackupFiles}${CLRct}]\n"
 
-   printf "\n ${YLWct}${BackupDirOpt}${NOct}.  Directory path where backups of icon files are stored."
-   printf "\n      [Current Path: ${GRNct}${theUserIconsBackupDir}${NOct}]\n"
+   printf "\n ${GRNct}${BackupDirOpt}${CLRct}.  Directory path where backups of icon files are stored."
+   printf "\n      [Current Path: ${GRNct}${theUserIconsBackupDir}${CLRct}]\n"
 
    if "$iconsFound" && [ -d "$theUserIconsBackupDir" ]
    then
-       printf "\n ${YLWct}${BkupIconsOpt}${NOct}.  Back up the icon files found in the ${GRNct}${userIconsDIRpath}${NOct} directory.\n"
+       printf "\n ${GRNct}${BkupIconsOpt}${CLRct}.  Back up the icon files found in the ${GRNct}${userIconsDIRpath}${CLRct} directory.\n"
    fi
 
    if "$backupsFound"
    then
-       printf "\n ${YLWct}${RestIconsOpt}${NOct}.  Restore the icon files into the ${GRNct}${userIconsDIRpath}${NOct} directory.\n"
-       printf "\n ${YLWct}${DeltIconsOpt}${NOct}.  Delete a previously saved backup of icon files.\n"
-       printf "\n ${YLWct}${ListIconsOpt}${NOct}.  List contents of a previously saved backup of icon files.\n"
+       printf "\n ${GRNct}${RestIconsOpt}${CLRct}.  Restore the icon files into the ${GRNct}${userIconsDIRpath}${CLRct} directory.\n"
+       printf "\n ${GRNct}${DeltIconsOpt}${CLRct}.  Delete a previously saved backup of icon files.\n"
+       printf "\n ${GRNct}${ListIconsOpt}${CLRct}.  List contents of a previously saved backup of icon files.\n"
    fi
 
-   printf "\n  ${YLWct}e${NOct}.  Exit to main menu.\n"
+   printf "\n  ${GRNct}e${CLRct}.  Exit to main menu.\n"
    printf "\n${SEPstr}\n"
    return 0
 }
@@ -1784,7 +1952,7 @@ ShowIconsMenuOptions()
 IconsMenuSelectionHandler()
 {
    local exitMenu=false  retCode
-   local theExitStr="${GRNct}e${NOct}=Exit"
+   local theExitStr="${GRNct}e${CLRct}=Exit"
 
    until ! ShowIconsMenuOptions
    do
@@ -1839,7 +2007,7 @@ IconsMenuSelectionHandler()
               break
           fi
 
-          printf "${REDct}INVALID option.${NOct}\n"
+          printf "${REDct}INVALID option.${CLRct}\n"
       done
       "$exitMenu" && break
    done
@@ -1962,14 +2130,14 @@ ValidateNVRAMentry()
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2023-Jun-10] ##
+## Modified by Martinski W. [2024-Jun-27] ##
 ##----------------------------------------##
 ### nvram parsing code based on dhcpstaticlist.sh by @Xentrk ###
 Export_FW_DHCP_JFFS()
 {
-	printf "\\n\\e[1mDo you want to export DHCP assignments and hostnames from NVRAM to %s DHCP client files? (y/n)\\e[0m\\n" "$SCRIPT_NAME"
-	printf "%s will backup NVRAM/jffs DHCP data as part of the export\\n" "$SCRIPT_NAME"
-	printf "\\n\\e[1mEnter answer (y/n):    \\e[0m"
+	printf "\n${BOLD}Do you want to export DHCP assignments and hostnames from NVRAM to %s DHCP client files?${CLEARct}\n" "$SCRIPT_NAME"
+	printf "%s will backup NVRAM/JFFS DHCP data as part of the export process.\n" "$SCRIPT_NAME"
+	printf "\n${BOLD}Enter answer (y/n):  ${CLEARct}"
 	read -r confirm
 	case "$confirm" in
 		y|Y)
@@ -1981,15 +2149,19 @@ Export_FW_DHCP_JFFS()
 		;;
 	esac
 
-	if [ "$(nvram get dhcp_staticlist | wc -m)" -le 1 ]; then
+	if [ "$(nvram get dhcp_staticlist | wc -m)" -le 1 ]
+	then
 		Print_Output true "DHCP static assignments not exported from NVRAM, no data found" "$PASS"
 		Clear_Lock
 		return 1
 	fi
 
-	if [ "$(Firmware_Version_Number "$(nvram get buildno)")" -lt "$(Firmware_Version_Number 386.4)" ]; then
-		if [ -f /jffs/nvram/dhcp_hostnames ]; then
-			if [ "$(wc -m < /jffs/nvram/dhcp_hostnames)" -le 1 ]; then
+	if [ "$(Firmware_Version_Number "$fwInstalledBranchVer")" -lt "$(Firmware_Version_Number "3004.386.4")" ]
+	then
+		if [ -f /jffs/nvram/dhcp_hostnames ]
+		then
+			if [ "$(wc -m < /jffs/nvram/dhcp_hostnames)" -le 1 ]
+			then
 				Print_Output true "DHCP hostnames not exported from NVRAM, no data found" "$PASS"
 				Clear_Lock
 				return 1
@@ -2000,7 +2172,8 @@ Export_FW_DHCP_JFFS()
 			return 1
 		fi
 
-		if [ -f /jffs/nvram/dhcp_staticlist ]; then
+		if [ -f /jffs/nvram/dhcp_staticlist ]
+		then
 			sed 's/</\n/g;s/>/ /g;s/<//g' /jffs/nvram/dhcp_staticlist | sed '/^$/d' > /tmp/yazdhcp-ips.tmp
 		else
 			nvram get dhcp_staticlist | sed 's/</\n/g;s/>/ /g;s/<//g'| sed '/^$/d' > /tmp/yazdhcp-ips.tmp
@@ -2015,7 +2188,8 @@ Export_FW_DHCP_JFFS()
 		OLDIFS=$IFS
 		IFS="<"
 
-		for HOST in $HOSTNAME_LIST; do
+		for HOST in $HOSTNAME_LIST
+		do
 			if [ "$HOST" = "" ]; then
 				continue
 			fi
@@ -2034,7 +2208,8 @@ Export_FW_DHCP_JFFS()
 		echo "MAC,IP,HOSTNAME,DNS" > "$SCRIPT_CONF"
 		sort -t . -k 3,3n -k 4,4n /tmp/yazdhcp.tmp > /tmp/yazdhcp_sorted.tmp
 
-		while IFS='' read -r line || [ -n "$line" ]; do
+		while IFS='' read -r line || [ -n "$line" ]
+		do
 			if [ "$(echo "$line" | wc -w)" -eq 4 ]; then
 				echo "$line" | awk '{ print ""$1","$2","$4","$3""; }' >> "$SCRIPT_CONF"
 			else
@@ -2048,8 +2223,9 @@ Export_FW_DHCP_JFFS()
 
 		rm -f /tmp/yazdhcp*.tmp
 
-		if [ -f /jffs/nvram/dhcp_hostnames ]; then
-			cp /jffs/nvram/dhcp_hostnames "$SCRIPT_DIR/.nvram_jffs_dhcp_hostnames"
+		if [ -f /jffs/nvram/dhcp_hostnames ]
+		then
+			cp -f /jffs/nvram/dhcp_hostnames "$SCRIPT_DIR/.nvram_jffs_dhcp_hostnames"
 			rm -f /jffs/nvram/dhcp_hostnames
 		fi
 		nvram get dhcp_hostnames > "$SCRIPT_DIR/.nvram_dhcp_hostnames"
@@ -2075,7 +2251,7 @@ Export_FW_DHCP_JFFS()
 	fi
 
 	if [ -f /jffs/nvram/dhcp_staticlist ]; then
-		cp /jffs/nvram/dhcp_staticlist "$SCRIPT_DIR/.nvram_jffs_dhcp_staticlist"
+		cp -f /jffs/nvram/dhcp_staticlist "$SCRIPT_DIR/.nvram_jffs_dhcp_staticlist"
 	fi
 	theKeyVal="$(nvram get dhcp_staticlist)"
 	if ! echo "$theKeyVal" | grep -qE "^<.*"
@@ -2086,12 +2262,7 @@ Export_FW_DHCP_JFFS()
 
 	Print_Output true "DHCP information successfully exported from NVRAM" "$PASS"
 
-	RESTART_DNSMASQ=true
-	Update_Hostnames
-	Update_Staticlist
-	Update_Optionslist
-
-	if "$RESTART_DNSMASQ"
+	if ProcessDHCPClients true
 	then
 		Print_Output true "Restarting dnsmasq for exported DHCP settings to take effect." "$PASS"
 		service restart_dnsmasq >/dev/null 2>&1
@@ -2101,9 +2272,33 @@ Export_FW_DHCP_JFFS()
 ##################################################################
 
 ##----------------------------------------##
+## Modified by Martinski W. [2024-Feb-26] ##
+##----------------------------------------##
+ProcessDHCPClients()
+{
+    local retCode=1
+    if [ $# -gt 0 ] && { [ "$1" = "true" ] || [ "$1" = "false" ] ; }
+    then RESTART_DNSMASQ="$1"
+    else RESTART_DNSMASQ=false
+    fi
+
+    Update_Hostnames
+    Update_Staticlist
+    Update_Optionslist
+
+    if "$RESTART_DNSMASQ"
+    then
+        retCode=0
+        Auto_DNSMASQ create false 2>/dev/null
+    fi
+    return "$retCode"
+}
+
+##----------------------------------------##
 ## Modified by Martinski W. [2023-Mar-14] ##
 ##----------------------------------------##
-Update_Hostnames(){
+Update_Hostnames()
+{
 	existingmd5=""
 	if [ -f "$SCRIPT_DIR/.hostnames" ]; then
 		existingmd5="$(md5sum "$SCRIPT_DIR/.hostnames" | awk '{print $1}')"
@@ -2122,7 +2317,8 @@ Update_Hostnames(){
 ##----------------------------------------##
 ## Modified by Martinski W. [2023-Mar-14] ##
 ##----------------------------------------##
-Update_Staticlist(){
+Update_Staticlist()
+{
 	existingmd5=""
 	if [ -f "$SCRIPT_DIR/.staticlist" ]; then
 		existingmd5="$(md5sum "$SCRIPT_DIR/.staticlist" | awk '{print $1}')"
@@ -2140,7 +2336,8 @@ Update_Staticlist(){
 ##----------------------------------------##
 ## Modified by Martinski W. [2023-Mar-14] ##
 ##----------------------------------------##
-Update_Optionslist(){
+Update_Optionslist()
+{
 	existingmd5=""
 	if [ -f "$SCRIPT_DIR/.optionslist" ]; then
 		existingmd5="$(md5sum "$SCRIPT_DIR/.optionslist" | awk '{print $1}')"
@@ -2155,43 +2352,44 @@ Update_Optionslist(){
 	fi
 }
 
-ScriptHeader(){
+ScriptHeader()
+{
 	clear
-	printf "\\n"
-	printf "\\e[1m##########################################################\\e[0m\\n"
-	printf "\\e[1m##                                                      ##\\e[0m\\n"
-	printf "\\e[1m##  __     __          _____   _    _   _____  _____    ##\\e[0m\\n"
-	printf "\\e[1m##  \ \   / /         |  __ \ | |  | | / ____||  __ \   ##\\e[0m\\n"
-	printf "\\e[1m##   \ \_/ /__ _  ____| |  | || |__| || |     | |__) |  ##\\e[0m\\n"
-	printf "\\e[1m##    \   // _  ||_  /| |  | ||  __  || |     |  ___/   ##\\e[0m\\n"
-	printf "\\e[1m##     | || (_| | / / | |__| || |  | || |____ | |       ##\\e[0m\\n"
-	printf "\\e[1m##     |_| \__,_|/___||_____/ |_|  |_| \_____||_|       ##\\e[0m\\n"
-	printf "\\e[1m##                                                      ##\\e[0m\\n"
-	printf "\\e[1m##                 %s on %-9s                  ##\\e[0m\\n" "$SCRIPT_VERSION" "$ROUTER_MODEL"
-	printf "\\e[1m##                                                      ##\\e[0m\\n"
-	printf "\\e[1m##           https://github.com/jackyaz/%s         ##\\e[0m\\n" "$SCRIPT_NAME"
-	printf "\\e[1m##                                                      ##\\e[0m\\n"
-	printf "\\e[1m##########################################################\\e[0m\\n"
-	printf "\\n"
+	printf "\n"
+	printf "${BOLD}##########################################################${CLEARct}\\n"
+	printf "${BOLD}##                                                      ##${CLEARct}\\n"
+	printf "${BOLD}##  __     __          _____   _    _   _____  _____    ##${CLEARct}\\n"
+	printf "${BOLD}##  \ \   / /         |  __ \ | |  | | / ____||  __ \   ##${CLEARct}\\n"
+	printf "${BOLD}##   \ \_/ /__ _  ____| |  | || |__| || |     | |__) |  ##${CLEARct}\\n"
+	printf "${BOLD}##    \   // _  ||_  /| |  | ||  __  || |     |  ___/   ##${CLEARct}\\n"
+	printf "${BOLD}##     | || (_| | / / | |__| || |  | || |____ | |       ##${CLEARct}\\n"
+	printf "${BOLD}##     |_| \__,_|/___||_____/ |_|  |_| \_____||_|       ##${CLEARct}\\n"
+	printf "${BOLD}##                                                      ##${CLEARct}\\n"
+	printf "${BOLD}##                %9s on %-18s       ##${CLEARct}\n" "$SCRIPT_VERSION" "$ROUTER_MODEL"
+	printf "${BOLD}##                                                      ##${CLEARct}\\n"
+	printf "${BOLD}##           https://github.com/jackyaz/%s         ##${CLEARct}\n" "$SCRIPT_NAME"
+	printf "${BOLD}##                                                      ##${CLEARct}\\n"
+	printf "${BOLD}##########################################################${CLEARct}\\n"
+	printf "\n"
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2023-May-28] ##
+## Modified by Martinski W. [2024-Jun-27] ##
 ##----------------------------------------##
 MainMenu()
 {
-	printf "1.    Process %s\\n\\n" "$SCRIPT_CONF"
+	printf "1.    Process ${GRNct}${SCRIPT_CONF}${CLRct}\n\n"
 
 	if CheckForCustomIconFiles || CheckForSavedIconFiles
 	then
-		printf "2.    Save/Restore custom user icons found in the ${GRNct}${userIconsDIRpath}${NOct} directory.\n\n"
+		printf "2.    Save/Restore custom user icons found in the ${GRNct}${userIconsDIRpath}${CLRct} directory.\n\n"
 	fi
 
 	showexport="true"
 	if [ "$(nvram get dhcp_staticlist | wc -m)" -le 1 ]; then
 		showexport="false"
 	fi
-	if [ "$(Firmware_Version_Number "$(nvram get buildno)")" -lt "$(Firmware_Version_Number 386.4)" ]
+	if [ "$(Firmware_Version_Number "$fwInstalledBranchVer")" -lt "$(Firmware_Version_Number "3004.386.4")" ]
 	then
 		if [ -f /jffs/nvram/dhcp_hostnames ]; then
 			if [ "$(wc -m < /jffs/nvram/dhcp_hostnames)" -le 1 ]; then
@@ -2202,15 +2400,15 @@ MainMenu()
 		fi
 	fi
 	if [ "$showexport" = "true" ]; then
-		printf "x.    Export nvram to %s\\n\\n" "$SCRIPT_NAME"
+		printf "x.    Export DHCP assignments from NVRAM to %s\n\n" "$SCRIPT_NAME"
 	fi
 	printf "u.    Check for updates\\n"
-	printf "uf.   Update %s with latest version (force update)\\n\\n" "$SCRIPT_NAME"
+	printf "uf.   Update %s with latest version (force update)\n\n" "$SCRIPT_NAME"
 	printf "e.    Exit %s\\n\\n" "$SCRIPT_NAME"
 	printf "z.    Uninstall %s\\n" "$SCRIPT_NAME"
-	printf "\\n"
-	printf "\\e[1m##########################################################\\e[0m\\n"
-	printf "\\n"
+	printf "\n"
+	printf "${BOLD}##########################################################${CLEARct}\\n"
+	printf "\n"
 
 	while true; do
 		printf "Choose an option:    "
@@ -2269,12 +2467,12 @@ MainMenu()
 			;;
 			e)
 				ScriptHeader
-				printf "\\n\\e[1mThanks for using %s!\\e[0m\\n\\n\\n" "$SCRIPT_NAME"
+				printf "\\n${BOLD}Thanks for using %s!${CLEARct}\\n\\n\\n" "$SCRIPT_NAME"
 				exit 0
 			;;
 			z)
 				while true; do
-					printf "\\n\\e[1mAre you sure you want to uninstall %s? (y/n)\\e[0m\\n" "$SCRIPT_NAME"
+					printf "\\n${BOLD}Are you sure you want to uninstall %s? (y/n)${CLEARct}\\n" "$SCRIPT_NAME"
 					read -r confirm
 					case "$confirm" in
 						y|Y)
@@ -2289,7 +2487,7 @@ MainMenu()
 				break
 			;;
 			*)
-				printf "\\nPlease choose a valid option\\n\\n"
+				printf "\nPlease choose a valid option\n\n"
 			;;
 		esac
 	done
@@ -2298,13 +2496,19 @@ MainMenu()
 	MainMenu
 }
 
-Menu_Install(){
-	Print_Output true "Welcome to $SCRIPT_NAME $SCRIPT_VERSION, a script by JackYaz"
+##----------------------------------------##
+## Modified by Martinski W. [2025-Mar-16] ##
+##----------------------------------------##
+Menu_Install()
+{
+	ScriptHeader
+	Print_Output true "Welcome to $SCRIPT_NAME $SCRIPT_VERSION, a script by JackYaz" "$PASS"
 	sleep 1
 
-	Print_Output true "Checking your router meets the requirements for $SCRIPT_NAME"
+	Print_Output true "Checking if your router meets the requirements for $SCRIPT_NAME" "$PASS"
 
-	if ! Check_Requirements; then
+	if ! Check_Requirements
+	then
 		Print_Output true "Requirements for $SCRIPT_NAME not met, please see above for the reason(s)" "$CRIT"
 		PressEnter
 		Clear_Lock
@@ -2317,22 +2521,23 @@ Menu_Install(){
 	Set_Version_Custom_Settings server "$SCRIPT_VERSION"
 	Create_Symlinks
 
-	httpstring="https"
-	portstring=":$(nvram get https_lanport)"
+	httpStr="https"
+	portStr=":$(nvram get https_lanport)"
 
-	if [ "$(nvram get http_enable)" -eq 0 ]; then
-		httpstring="http"
-		portstring=""
+	if [ "$(nvram get http_enable)" -eq 0 ]
+	then
+		httpStr="http"
+		portStr=""
 	fi
-	printf "%s will backup nvram/jffs DHCP data as part of the export, but you may wish to screenshot %s://%s%s/Advanced_DHCP_Content.asp\\e[0m\\n" "$SCRIPT_NAME" "$httpstring" "$(nvram get lan_ipaddr)" "$portstring"
-	printf "\\n\\e[1mIf you wish to screenshot, please do so now as the WebUI page will be updated by %s\\e[0m\\n" "$SCRIPT_NAME"
-	printf "\\n\\e[1mPress any key when you are ready to continue\\e[0m\\n"
-	while true; do
-		read -r key
+	printf "%s will backup NVRAM/JFFS DHCP data as part of the export,\nbut you may wish to screenshot the following WebUI page:" "$SCRIPT_NAME"
+	printf "\n\n${GRNct}%s://%s%s/Advanced_DHCP_Content.asp${CLEARct}\n" "$httpStr" "$(nvram get lan_ipaddr)" "$portStr"
+	printf "\n${BOLD}If you wish to screenshot, please do so now before the WebUI page is updated by %s${CLEARct}.\n" "$SCRIPT_NAME"
+	printf "\n${BOLD}Press the <Enter> key when you are ready to continue...${CLEARct}\n"
+	while true
+	do
+		read -rs key
 		case "$key" in
-			*)
-				break
-			;;
+			*) break ;;
 		esac
 	done
 
@@ -2353,22 +2558,20 @@ Menu_Install(){
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2023-Mar-14] ##
+## Modified by Martinski W. [2024-Feb-26] ##
 ##----------------------------------------##
-Menu_ProcessDHCPClients(){
-	RESTART_DNSMASQ=false
-	Update_Hostnames
-	Update_Staticlist
-	Update_Optionslist
-	if "$RESTART_DNSMASQ" ; then service restart_dnsmasq >/dev/null 2>&1 ; fi
-
+Menu_ProcessDHCPClients()
+{
+	if ProcessDHCPClients
+	then service restart_dnsmasq >/dev/null 2>&1 ; fi
 	Clear_Lock
 }
 
 ##----------------------------------------##
 ## Modified by Martinski W. [2023-Jun-16] ##
 ##----------------------------------------##
-Menu_Startup(){
+Menu_Startup()
+{
 	inStartupMode=true
 	Create_Dirs
 	Set_Version_Custom_Settings "local"
@@ -2394,7 +2597,8 @@ Menu_ForceUpdate(){
 ##----------------------------------------##
 ## Modified by Martinski W. [2023-May-28] ##
 ##----------------------------------------##
-Menu_Uninstall(){
+Menu_Uninstall()
+{
 	Print_Output true "Removing $SCRIPT_NAME..." "$PASS"
 	Auto_Startup delete 2>/dev/null
 	Auto_ServiceEvent delete 2>/dev/null
@@ -2411,7 +2615,7 @@ Menu_Uninstall(){
 		commitNVRAM=true
 	fi
 
-	printf "\\n\\e[1mDo you want to restore the original NVRAM values from before %s was installed? (y/n):    \\e[0m" "$SCRIPT_NAME"
+	printf "\\n${BOLD}Do you want to restore the original NVRAM values from before %s was installed? (y/n):    ${CLEARct}" "$SCRIPT_NAME"
 	read -r confirm
 	case "$confirm" in
 		y|Y)
@@ -2441,7 +2645,7 @@ Menu_Uninstall(){
 	esac
 	if "$commitNVRAM" ; then nvram commit ; fi
 
-	printf "\\n\\e[1mDo you want to delete %s DHCP clients and NVRAM backup files? (y/n):    \\e[0m" "$SCRIPT_NAME"
+	printf "\\n${BOLD}Do you want to delete %s DHCP clients and NVRAM backup files? (y/n):    ${CLEARct}" "$SCRIPT_NAME"
 	read -r confirm
 	case "$confirm" in
 		y|Y)
@@ -2464,7 +2668,8 @@ Menu_Uninstall(){
 	fi
 }
 
-Check_Requirements(){
+Check_Requirements()
+{
 	CHECKSFAILED="false"
 
 	if [ "$(nvram get jffs2_scripts)" -ne 1 ]; then
@@ -2486,13 +2691,14 @@ Check_Requirements(){
 	fi
 }
 
-##-------------------------------------##
-## Added by Martinski W. [2023-Apr-03] ##
-##-------------------------------------##
+##----------------------------------------##
+## Modified by Martinski W. [2024-Feb-26] ##
+##----------------------------------------##
 # Catch unexpected exit to release lock #
-trap 'Clear_Lock; exit 10' EXIT HUP INT TERM
+trap 'Clear_Lock; exit 10' EXIT HUP INT QUIT ABRT TERM
 
-if [ $# -eq 0 ] || [ -z "$1" ]; then
+if [ $# -eq 0 ] || [ -z "$1" ]
+then
 	Create_Dirs
 	Set_Version_Custom_Settings local
 	Create_Symlinks
@@ -2500,6 +2706,7 @@ if [ $# -eq 0 ] || [ -z "$1" ]; then
 	Auto_ServiceEvent create 2>/dev/null
 	Auto_DNSMASQ create 2>/dev/null
 	Shortcut_Script create
+	_CheckFor_WebGUI_Page_
 	ScriptHeader
 	MainMenu
 	exit 0
@@ -2590,18 +2797,19 @@ case "$1" in
 	;;
 	develop)
 		SCRIPT_BRANCH="develop"
-		SCRIPT_REPO="https://jackyaz.io/$SCRIPT_NAME/$SCRIPT_BRANCH"
+		SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 		Update_Version force
 		exit 0
 	;;
 	stable)
 		SCRIPT_BRANCH="master"
-		SCRIPT_REPO="https://jackyaz.io/$SCRIPT_NAME/$SCRIPT_BRANCH"
+		SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 		Update_Version force
 		exit 0
 	;;
 	*)
-		echo "Command not recognised, please try again"
+		ScriptHeader
+		Print_Output false "Parameter [$*] is NOT recognised." "$ERR"
 		exit 1
 	;;
 esac

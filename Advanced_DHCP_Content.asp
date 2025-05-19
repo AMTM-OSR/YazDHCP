@@ -1,5 +1,6 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
+<html xmlns:v>
 <head>
 <meta http-equiv="X-UA-Compatible" content="IE=Edge"/>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
@@ -41,7 +42,8 @@ thead.collapsible-jquery {
   background-color: darkred !important;
 }
 </style>
-<script language="JavaScript" type="text/javascript" src="/ext/shared-jy/jquery.js"></script>
+<script language="JavaScript" type="text/javascript" src="/js/jquery.js"></script>
+<script language="JavaScript" type="text/javascript" src="/js/httpApi.js"></script>
 <script language="JavaScript" type="text/javascript" src="/ext/shared-jy/d3.js"></script>
 <script language="JavaScript" type="text/javascript" src="/state.js"></script>
 <script language="JavaScript" type="text/javascript" src="/general.js"></script>
@@ -53,14 +55,13 @@ thead.collapsible-jquery {
 <script language="JavaScript" type="text/javascript" src="/client_function.js"></script>
 <script language="JavaScript" type="text/javascript" src="/validator.js"></script>
 <script language="JavaScript" type="text/javascript" src="/base64.js"></script>
-<script language="JavaScript" type="text/javascript" src="/js/httpApi.js"></script>
 <script>
 
-/**---------------------------------------------**/
-/** Last Modified by Martinski W. [2023-Jun-14] **/
-/**---------------------------------------------**/
+/**----------------------------------------**/
+/** Modified by Martinski W. [2025-Mar-17] **/
+/**----------------------------------------**/
 
-const actionScriptPrefix="start_YazDHCP";
+const actionScriptPrefix = "start_YazDHCP";
 
 /**----------------------------------------------**/
 /** Added/modified by Martinski W. [2023-Jan-28] **/
@@ -375,6 +376,17 @@ $(function(){
 	}
 });
 
+/**----------------------------------------**/
+/** Modified by Martinski W. [2024-Jun-27] **/
+/**----------------------------------------**/
+let theProductID = '<% nvram_get("productid"); %>';
+theProductID = theProductID.toUpperCase();
+
+let firmVerStr = '<% nvram_get("firmver"); %>';
+let firmVerNum = parseFloat(firmVerStr.replace(/\./g,""));
+let fwBuildStr = '<% nvram_get("buildno"); %>';
+let fwBuildNum = parseFloat(fwBuildStr);
+
 var apimaxlength = 6498;
 var maxnumrows = 128;
 
@@ -390,7 +402,8 @@ var manually_dhcp_hosts_array = [];
 
 if(pptpd_support){
 	var pptpd_clients = '<% nvram_get("pptpd_clients"); %>';
-	var pptpd_clients_subnet = pptpd_clients.split(".")[0]+"." + pptpd_clients.split(".")[1]+"." + pptpd_clients.split(".")[2]+".";
+	var pptpd_clients_subnet = pptpd_clients.split(".")[0]+"." +
+	    pptpd_clients.split(".")[1]+"." + pptpd_clients.split(".")[2]+".";
 	var pptpd_clients_start_ip = parseInt(pptpd_clients.split(".")[3].split("-")[0]);
 	var pptpd_clients_end_ip = parseInt(pptpd_clients.split("-")[1]);
 }
@@ -469,7 +482,8 @@ function ErrorCSVExport(){
 	document.getElementById("aExport").href="javascript:alert(\"Error exporting CSV, please refresh the page and try again\")";
 }
 
-function ParseCSVData(data){
+function ParseCSVData(data)
+{
 	dhcp_staticlist_array = [];
 	manually_dhcp_list_array = [];
 	manually_dhcp_list_array_ori = [];
@@ -478,7 +492,8 @@ function ParseCSVData(data){
 	
 	var csvContent = "MAC,IP,HOSTNAME,DNS\n";
 	var settingslength = 0;
-	for(var i = 0; i < data.length; i++){
+	for(var i = 0; i < data.length; i++)
+	{
 		var ipvalue = data[i].IP;
 		if(document.form.lan_netmask.value == "255.255.255.0"){
 			ipvalue = data[i].IP.split(".")[3]
@@ -527,7 +542,8 @@ function ParseCSVData(data){
 		}
 	});
 	
-	for(var i = 0; i < dhcp_staticlist_array.length; i++){
+	for(var i = 0; i < dhcp_staticlist_array.length; i++)
+	{
 		var item_para = {
 			"mac" : dhcp_staticlist_array[i].MAC.toUpperCase(),
 			"dns" : dhcp_staticlist_array[i].DNS,
@@ -1061,17 +1077,19 @@ function Get_DHCP_LeaseConfig()
 var manually_dhcp_sort_type = 0;//0:increase, 1:decrease
 
 /**----------------------------------------**/
-/** Modified by Martinski W. [2023-Jun-14] **/
+/** Modified by Martinski W. [2024-Jun-26] **/
 /**----------------------------------------**/
-function initial(){
+function initial()
+{
 	show_menu();
-	document.getElementById("GWStatic").innerHTML = "Manually Assigned IP addresses in the DHCP scope (Max Limit: )" + maxnumrows;
+	document.getElementById("GWStatic").innerHTML = "Manually Assigned IP addresses in the DHCP scope (Max Limit: Loading...)" + maxnumrows;
+
 	LoadCustomSettings();
 	Get_DHCP_LeaseConfig();
 	GetCustomUserIconsConfig();
 	ScriptUpdateLayout();
 	AddEventHandlers();
-	//id="faq" href="https://www.asus.com/support/FAQ/1000906"
+	// id="faq" href="https://www.asus.com/support/FAQ/1000906/" //
 	httpApi.faqURL("1000906", function(url){document.getElementById("faq").href=url;});
 	
 	d3.csv("/ext/YazDHCP/DHCP_clients.htm").then(function(data){
@@ -1240,7 +1258,11 @@ function AddEventHandlers(){
 	});
 }
 
-function addRow_Group(upper){
+/**----------------------------------------**/
+/** Modified by Martinski W. [2024-Jun-22] **/
+/**----------------------------------------**/
+function addRow_Group(upper)
+{
 	if(dhcp_enable != "1"){
 		document.form.dhcp_enable_x[0].checked = true
 	}
@@ -1266,23 +1288,27 @@ function addRow_Group(upper){
 		document.form.dhcp_staticip_x_0.select();
 		return false;
 	}
-	else if((document.form.dhcp_staticname_x_0.value != "") && ((alert_str = validator.host_name(document.form.dhcp_staticname_x_0)) != "")){
+	else if((document.form.dhcp_hostname_x_0.value != "") && ((alert_str = validator.host_name(document.form.dhcp_hostname_x_0)) != "")){
 		alert(alert_str);
-		document.form.dhcp_staticname_x_0.focus();
-		document.form.dhcp_staticname_x_0.select();
+		document.form.dhcp_hostname_x_0.focus();
+		document.form.dhcp_hostname_x_0.select();
 		return false;
 	}
-	else if(check_macaddr(document.form.dhcp_staticmac_x_0, check_hwaddr_flag(document.form.dhcp_staticmac_x_0, 'inner')) == true
-				&& validator.validIPForm(document.form.dhcp_staticip_x_0,0) == true && validate_dhcp_range(document.form.dhcp_staticip_x_0) == true){
-					if(document.form.dhcp_dnsip_x_0.value != ""){
-						if(!validator.ipAddrFinal(document.form.dhcp_dnsip_x_0, 'dhcp_dns1_x')){
-							return false;
-						}
-					}
-		//match(ip or mac) is not accepted
+	else if(check_macaddr(document.form.dhcp_staticmac_x_0, check_hwaddr_flag(document.form.dhcp_staticmac_x_0, 'inner')) == true &&
+	        validator.validIPForm(document.form.dhcp_staticip_x_0,0) == true &&
+	        validate_dhcp_range(document.form.dhcp_staticip_x_0) == true)
+	{
+		if(document.form.dhcp_dnsip_x_0.value != ""){
+			if(!validator.ipAddrFinal(document.form.dhcp_dnsip_x_0, 'dhcp_dns1_x')){
+				return false;
+			}
+		}
+		//match(ip or mac) is not accepted//
 		var match_flag = false;
-		for(var key in manually_dhcp_list_array){
-			if(manually_dhcp_list_array.hasOwnProperty(key)){
+		for(var key in manually_dhcp_list_array)
+		{
+			if(manually_dhcp_list_array.hasOwnProperty(key))
+			{
 				var exist_ip = key;
 				var exist_mac = manually_dhcp_list_array[exist_ip].mac;
 				if(exist_mac == document.form.dhcp_staticmac_x_0.value.toUpperCase()){
@@ -1302,16 +1328,26 @@ function addRow_Group(upper){
 			}
 		}
 		if(match_flag) return false;
-		
+
+		var alert_str = "";
+		if(document.form.dhcp_hostname_x_0.value.length > 0)
+			alert_str = validator.host_name(document.form.dhcp_hostname_x_0);
+		if(alert_str != ""){
+			alert(alert_str);
+			document.form.dhcp_hostname_x_0.focus();
+			document.form.dhcp_hostname_x_0.select();
+			return false;
+		}
+
 		var item_para = {
 			"mac" : document.form.dhcp_staticmac_x_0.value.toUpperCase(),
 			"dns" : document.form.dhcp_dnsip_x_0.value,
-			"hostname" : document.form.dhcp_staticname_x_0.value,
+			"hostname" : document.form.dhcp_hostname_x_0.value,
 			"ip" : document.form.dhcp_staticip_x_0.value
 		};
-			
+
 		manually_dhcp_list_array[document.form.dhcp_staticip_x_0.value.toUpperCase()] = item_para;
-		
+
 		if(vpn_fusion_support){
 			var newRuleArray = [];
 			newRuleArray.push(document.form.dhcp_staticip_x_0.value);
@@ -1319,16 +1355,16 @@ function addRow_Group(upper){
 			newRuleArray.push("0");
 			vpnc_dev_policy_list_array.push(newRuleArray);
 		}
-		
+
 		document.form.dhcp_staticip_x_0.value = "";
 		document.form.dhcp_staticmac_x_0.value = "";
 		document.form.dhcp_dnsip_x_0.value = "";
-		document.form.dhcp_staticname_x_0.value = "";
-		
+		document.form.dhcp_hostname_x_0.value = "";
+
 		sortdir = sortdir * -1;	/* sortlist() will switch order back */
 		sortlist(sortfield);
 		showdhcp_staticlist();
-		
+
 		if(backup_mac != ""){
 			backup_mac = "";
 			backup_ip = "";
@@ -1386,11 +1422,11 @@ function edit_Row(r){
 	if(validator.ipv4_addr(document.getElementById('dhcp_staticlist_table').rows[i].cells[2].innerHTML, 'dhcp_dns1_x')){
 		document.form.dhcp_dnsip_x_0.value = document.getElementById('dhcp_staticlist_table').rows[i].cells[2].innerHTML
 	}
-	document.form.dhcp_staticname_x_0.value = document.getElementById('dhcp_staticlist_table').rows[i].cells[3].title;
+	document.form.dhcp_hostname_x_0.value = document.getElementById('dhcp_staticlist_table').rows[i].cells[3].title;
 	backup_mac = document.form.dhcp_staticmac_x_0.value;
 	backup_ip = document.form.dhcp_staticip_x_0.value;
 	backup_dns = document.form.dhcp_dnsip_x_0.value;
-	backup_name = document.form.dhcp_staticname_x_0.value;
+	backup_name = document.form.dhcp_hostname_x_0.value;
 	del_Row(r);
 	document.form.dhcp_staticmac_x_0.focus();
 }
@@ -1400,71 +1436,118 @@ function cancel_Edit(){
 		document.form.dhcp_staticmac_x_0.value = backup_mac;
 		document.form.dhcp_staticip_x_0.value = backup_ip;
 		document.form.dhcp_dnsip_x_0.value = backup_dns;
-		document.form.dhcp_staticname_x_0.value = backup_name;
+		document.form.dhcp_hostname_x_0.value = backup_name;
 		addRow_Group(maxnumrows);
 	}
 }
 
-function showdhcp_staticlist(){
+/**----------------------------------------**/
+/** Modified by Martinski W. [2024-Jun-22] **/
+/**----------------------------------------**/
+function showdhcp_staticlist()
+{
 	var code = "";
 	var clientListEventData = [];
 	code+='<table width="100%" cellspacing="0" cellpadding="4" align="center" class="list_table" id="dhcp_staticlist_table">';
 	if(Object.keys(manually_dhcp_list_array).length == 0){
 		code+='<tr><td style="color:#FFCC00;">No data in table.</td></tr>';
 	}
-	else{
-		//user icon
+	else
+	{
+		//user icon//
 		var userIconBase64 = "NoIcon";
-		var clientName, deviceType, deviceVender;
-		
-		for(var i = 0; i < sorted_array.length; i++){
+		var clientName, deviceType, deviceVendor;
+
+		for(var i = 0; i < sorted_array.length; i++)
+		{
 			var key = sorted_array[i].ip;
-			var clientMac = manually_dhcp_list_array[key]["mac"].toUpperCase();
-			var clientDNS = manually_dhcp_list_array[key]["dns"];
+			var clientIP = key;
+			var clientMac = manually_dhcp_list_array[clientIP]["mac"].toUpperCase();
+			var clientDNS = manually_dhcp_list_array[clientIP]["dns"];
 			if(clientDNS == ""){
 				clientDNS = "Default";
 			}
+			var clientHostname = manually_dhcp_list_array[clientIP]["hostname"];
 			var clientIconID = "clientIcon_" + clientMac.replace(/\:/g, "");
-			var clientIP = key;
+
 			if(clientList[clientMac]){
 				clientName = (clientList[clientMac].nickName == "") ? clientList[clientMac].name : clientList[clientMac].nickName;
 				deviceType = clientList[clientMac].type;
-				deviceVender = clientList[clientMac].vendor;
+				deviceVendor = clientList[clientMac].vendor;
 			}
 			else{
 				clientName = "New device";
 				deviceType = 0;
-				deviceVender = "";
+				deviceVendor = "";
 			}
-			if(manually_dhcp_list_array[key] != undefined){
-				var clientHostname = manually_dhcp_list_array[key].hostname;
+			if(manually_dhcp_list_array[clientIP] != undefined){
+				clientHostname = manually_dhcp_list_array[clientIP].hostname;
 			}
 			else{
-				var clientHostname = "";
+				clientHostname = "";
 			}
-			
+
 			code+='<tr><td width="32%" align="center" title="' + clientMac +'">';
 			code+='<table style="width:100%;"><tr><td style="width:40%;height:56px;border:0px;">';
 			if(clientList[clientMac] == undefined){
-				code+='<div id="' + clientIconID + '" class="clientIcon type0"></div>';
+				code += '<div id="' + clientIconID + '" class="clientIcon type0"></div>';
 			}
-			else{
-				if(usericon_support){
+			else
+			{
+				if (usericon_support){
 					userIconBase64 = getUploadIcon(clientMac.replace(/\:/g, ""));
 				}
-				if(userIconBase64 != "NoIcon"){
-					code+='<div id="' + clientIconID + '" style="text-align:center;"><img class="imgUserIcon_card" src="' + userIconBase64 + '"></div>';
-				}
-				else if(deviceType != "0" || deviceVender == ""){
-					code+='<div id="' + clientIconID + '" class="clientIcon type' + deviceType + '"></div>';
-				}
-				else if(deviceVender != "" ){
-					var venderIconClassName = getVenderIconClassName(deviceVender.toLowerCase());
-					if(venderIconClassName != "" && !downsize_4m_support){
-						code+='<div id="' + clientIconID + '" class="venderIcon ' + venderIconClassName + '"></div>';
+				if (userIconBase64 != "NoIcon")
+				{
+					if (firmVerNum == 3004)
+					{
+					    code += '<div id="' + clientIconID + '" style="text-align:center;"><img class="imgUserIcon_card" src="' + userIconBase64 + '"></div>';
 					}
-					else{
-						code+='<div id="' + clientIconID + '" class="clientIcon type' + deviceType + '"></div>';
+					else if (firmVerNum >= 3006)
+					{
+					    if (clientList[clientMac].isUserUplaodImg){
+					        code += '<div id="' + clientIconID + '" class="clientIcon"><img class="imgUserIcon_card" src="' + userIconBase64 + '"></div>';
+					    }
+					    else{
+					        code += '<div id="' + clientIconID + '" class="clientIcon"><i class="type" style="--svg:url(' + userIconBase64 + ')"></i></div>';
+					    }
+					}
+				}
+				else if(deviceType != "0" || deviceVendor == "")
+				{
+					if (firmVerNum == 3004)
+					{
+					    code += '<div id="' + clientIconID + '" class="clientIcon type' + deviceType + '"></div>';
+					}
+					else if (firmVerNum >= 3006)
+					{
+					    code += '<div id="' + clientIconID + '" class="clientIcon"><i class="type'+deviceType+'"></i></div>';
+					}
+				}
+				else if(deviceVendor != "")
+				{
+					var vendorIconClassName;
+					if (typeof getVenderIconClassName !== 'undefined' &&
+					    typeof getVenderIconClassName === 'function')
+					{
+					    vendorIconClassName = getVenderIconClassName(deviceVendor.toLowerCase());
+					    if (vendorIconClassName != "" && !downsize_4m_support){
+					        code += '<div id="' + clientIconID + '" class="venderIcon ' + vendorIconClassName + '"></div>';
+					    }
+					    else{
+					        code += '<div id="' + clientIconID + '" class="clientIcon type' + deviceType + '"></div>';
+					    }
+					}
+					else if (typeof getVendorIconClassName !== 'undefined' &&
+					         typeof getVendorIconClassName === 'function')
+					{
+					    vendorIconClassName = getVendorIconClassName(deviceVendor.toLowerCase());
+					    if (vendorIconClassName != "" && !downsize_4m_support){
+					        code += '<div id="' + clientIconID + '" class="clientIcon"><i class="vendor-icon '+ vendorIconClassName +'"></i></div>';
+					    }
+					    else{
+					        code += '<div id="' + clientIconID + '" class="clientIcon"><i class="type' + deviceType + '"></i></div>';
+					    }
 					}
 				}
 			}
@@ -1500,13 +1583,20 @@ function showdhcp_staticlist(){
 	}
 }
 
-function applyRule(){
+/**----------------------------------------**/
+/** Modified by Martinski W. [2024-Jun-27] **/
+/**----------------------------------------**/
+function applyRule()
+{
 	cancel_Edit();
-	
-	if(validForm()){
+
+	if (validForm())
+	{
+		document.getElementById("GWStatic").innerHTML = "Manually Assigned IP addresses in the DHCP scope (Max Limit: Loading...)" + maxnumrows;
+
 		dhcp_staticlist_array = [];
 		dhcp_hostnames_array = [];
-		
+
 		Object.keys(manually_dhcp_list_array).forEach(function(key){
 			var ipvalue = key;
 			if(document.form.lan_netmask.value == "255.255.255.0"){
@@ -1766,16 +1856,36 @@ function setClientIP(macaddr, ipaddr){
 	hideClients_Block();
 }
 
-function hideClients_Block(){
-	document.getElementById("pull_arrow").src = "/images/arrow-down.gif";
+/**----------------------------------------**/
+/** Modified by Martinski W. [2024-Jun-23] **/
+/**----------------------------------------**/
+function hideClients_Block()
+{
+	let srceImagePath="";
+	if (firmVerNum == 3004)
+	{ srceImagePath = "/images/arrow-down.gif" ; }
+	else if (firmVerNum >= 3006)
+	{ srceImagePath = "/images/unfold_more.svg" ; }
+
+	document.getElementById("pull_arrow").src = srceImagePath;
 	document.getElementById('ClientList_Block_PC').style.display='none';
 }
 
-function pullLANIPList(obj){
+/**----------------------------------------**/
+/** Modified by Martinski W. [2024-Jun-23] **/
+/**----------------------------------------**/
+function pullLANIPList(obj)
+{
+	let srceImagePath="";
+	if (firmVerNum == 3004)
+	{ srceImagePath = "/images/arrow-top.gif" ; }
+	else if (firmVerNum >= 3006)
+	{ srceImagePath = "/images/unfold_less.svg" ; }
+
 	var element = document.getElementById('ClientList_Block_PC');
 	var isMenuopen = element.offsetWidth > 0 || element.offsetHeight > 0;
 	if(isMenuopen == 0){
-		obj.src = "/images/arrow-top.gif"
+		obj.src = srceImagePath;
 		element.style.display = 'block';
 		document.form.dhcp_staticmac_x_0.focus();
 	}
@@ -2206,7 +2316,7 @@ function sortClientIP(){
 <input type="text" class="input_15_table" maxlength="15" name="dhcp_dnsip_x_0" onkeypress="return validator.isIPAddr(this,event)" autocorrect="off" autocapitalize="off">
 </td>
 <td width="23%">
-<input type="text" class="input_15_table" maxlength="30" onkeypress="return validator.isString(this, event);" name="dhcp_staticname_x_0" autocorrect="off" autocapitalize="off">
+<input type="text" class="input_15_table" maxlength="30" onkeypress="return validator.isString(this, event);" name="dhcp_hostname_x_0" autocorrect="off" autocapitalize="off">
 </td>
 <td width="7%">
 <div>
