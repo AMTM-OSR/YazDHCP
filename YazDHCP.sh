@@ -9,10 +9,10 @@
 ##     | || (_| | / / | |__| || |  | || |____ | |       ##
 ##     |_| \__,_|/___||_____/ |_|  |_| \_____||_|       ##
 ##                                                      ##
-##         https://github.com/jackyaz/YazDHCP/          ##
+##         https://github.com/AMTM-OSR/YazDHCP/         ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2025-May-18
+# Last Modified: 2025-May-25
 #---------------------------------------------------------
 
 #############################################
@@ -28,8 +28,8 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
-readonly SCRIPT_VERSION="v1.0.7"
-SCRIPT_BRANCH="develop"
+readonly SCRIPT_VERSION="v1.0.8"
+SCRIPT_BRANCH="master"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
 readonly SCRIPT_CONF="$SCRIPT_DIR/DHCP_clients"
@@ -710,9 +710,9 @@ Update_Check()
 	echo 'var updatestatus = "InProgress";' > "$SCRIPT_WEB_DIR/detect_update.js"
 	doupdate="false"
 	localver="$(grep "SCRIPT_VERSION=" /jffs/scripts/"$SCRIPT_NAME" | grep -m1 -oE "$scriptVersRegExp")"
-	curl -fsL --retry 4 --retry-delay 5 "$SCRIPT_REPO/404/$SCRIPT_NAME.sh" | grep -qF "jackyaz" || \
+	curl -fsL --retry 4 --retry-delay 5 "$SCRIPT_REPO/$SCRIPT_NAME.sh" | grep -qF "jackyaz" || \
 	{ Print_Output true "404 error detected - stopping update" "$ERR"; return 1; }
-	serverver="$(curl -fsL --retry 4 --retry-delay 5 "$SCRIPT_REPO/version/$SCRIPT_NAME.sh" | grep "SCRIPT_VERSION=" | grep -m1 -oE "$scriptVersRegExp")"
+	serverver="$(curl -fsL --retry 4 --retry-delay 5 "$SCRIPT_REPO/$SCRIPT_NAME.sh" | grep "SCRIPT_VERSION=" | grep -m1 -oE "$scriptVersRegExp")"
 	if [ "$localver" != "$serverver" ]
 	then
 		doupdate="version"
@@ -720,7 +720,7 @@ Update_Check()
 		echo 'var updatestatus = "'"$serverver"'";'  > "$SCRIPT_WEB_DIR/detect_update.js"
 	else
 		localmd5="$(md5sum "/jffs/scripts/$SCRIPT_NAME" | awk '{print $1}')"
-		remotemd5="$(curl -fsL --retry 4 --retry-delay 5 "$SCRIPT_REPO/md5/$SCRIPT_NAME.sh" | md5sum | awk '{print $1}')"
+		remotemd5="$(curl -fsL --retry 4 --retry-delay 5 "$SCRIPT_REPO/$SCRIPT_NAME.sh" | md5sum | awk '{print $1}')"
 		if [ "$localmd5" != "$remotemd5" ]
 		then
 			doupdate="md5"
@@ -758,7 +758,7 @@ Update_Version()
 		then
 			Update_File Advanced_DHCP_Content.asp
 
-			Download_File "$SCRIPT_REPO/update/$SCRIPT_NAME.sh" "/jffs/scripts/$SCRIPT_NAME" && \
+			Download_File "$SCRIPT_REPO/$SCRIPT_NAME.sh" "/jffs/scripts/$SCRIPT_NAME" && \
 			Print_Output true "$SCRIPT_NAME successfully updated" "$PASS"
 			chmod 0755 /jffs/scripts/"$SCRIPT_NAME"
 			Clear_Lock
@@ -778,11 +778,11 @@ Update_Version()
 
 	if [ $# -gt 0 ] && [ "$1" = "force" ]
 	then
-		serverver="$(curl -fsL --retry 4 --retry-delay 5 "$SCRIPT_REPO/version/$SCRIPT_NAME.sh" | grep "SCRIPT_VERSION=" | grep -m1 -oE "$scriptVersRegExp")"
+		serverver="$(curl -fsL --retry 4 --retry-delay 5 "$SCRIPT_REPO/$SCRIPT_NAME.sh" | grep "SCRIPT_VERSION=" | grep -m1 -oE "$scriptVersRegExp")"
 		Print_Output true "Downloading latest version ($serverver) of $SCRIPT_NAME" "$PASS"
 		Update_File Advanced_DHCP_Content.asp
 		Update_File shared-jy.tar.gz
-		Download_File "$SCRIPT_REPO/update/$SCRIPT_NAME.sh" "/jffs/scripts/$SCRIPT_NAME" && \
+		Download_File "$SCRIPT_REPO/$SCRIPT_NAME.sh" "/jffs/scripts/$SCRIPT_NAME" && \
 		Print_Output true "$SCRIPT_NAME successfully updated" "$PASS"
 		chmod 0755 /jffs/scripts/"$SCRIPT_NAME"
 		Clear_Lock
@@ -807,16 +807,16 @@ Update_File()
 		tmpfile="/tmp/$1"
 		if [ -f "$SCRIPT_DIR/$1" ]
 		then
-			Download_File "$SCRIPT_REPO/files/$1" "$tmpfile"
+			Download_File "$SCRIPT_REPO/$1" "$tmpfile"
 			if ! diff -q "$tmpfile" "$SCRIPT_DIR/$1" >/dev/null 2>&1
 			then
-				Download_File "$SCRIPT_REPO/files/$1" "$SCRIPT_DIR/$1"
+				Download_File "$SCRIPT_REPO/$1" "$SCRIPT_DIR/$1"
 				Print_Output true "New version of $1 downloaded" "$PASS"
 				Mount_WebUI
 			fi
 			rm -f "$tmpfile"
 		else
-			Download_File "$SCRIPT_REPO/files/$1" "$SCRIPT_DIR/$1"
+			Download_File "$SCRIPT_REPO/$1" "$SCRIPT_DIR/$1"
 			Print_Output true "New version of $1 downloaded" "$PASS"
 			Mount_WebUI
 		fi
@@ -2367,7 +2367,8 @@ ScriptHeader()
 	printf "${BOLD}##                                                      ##${CLEARct}\\n"
 	printf "${BOLD}##                %9s on %-18s       ##${CLEARct}\n" "$SCRIPT_VERSION" "$ROUTER_MODEL"
 	printf "${BOLD}##                                                      ##${CLEARct}\\n"
-	printf "${BOLD}##           https://github.com/jackyaz/%s         ##${CLEARct}\n" "$SCRIPT_NAME"
+	printf "${BOLD}##           https://github.com/AMTM-OSR/%s             ##${CLEARct}\\n"
+	printf "${BOLD}##      Forked from: https://github.com/jackyaz/%s      ##${CLEARct}\\n"
 	printf "${BOLD}##                                                      ##${CLEARct}\\n"
 	printf "${BOLD}##########################################################${CLEARct}\\n"
 	printf "\n"
