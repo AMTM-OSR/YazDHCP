@@ -12,7 +12,7 @@
 ##         https://github.com/AMTM-OSR/YazDHCP/         ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2025-May-25
+# Last Modified: 2025-May-26
 #---------------------------------------------------------
 
 #############################################
@@ -2367,8 +2367,8 @@ ScriptHeader()
 	printf "${BOLD}##                                                      ##${CLEARct}\\n"
 	printf "${BOLD}##                %9s on %-18s       ##${CLEARct}\n" "$SCRIPT_VERSION" "$ROUTER_MODEL"
 	printf "${BOLD}##                                                      ##${CLEARct}\\n"
-	printf "${BOLD}##           https://github.com/AMTM-OSR/%s             ##${CLEARct}\\n"
-	printf "${BOLD}##      Forked from: https://github.com/jackyaz/%s      ##${CLEARct}\\n"
+	printf "${BOLD}##         https://github.com/AMTM-OSR/YazDHCP          ##${CLEARct}\\n"
+	printf "${BOLD}##   Forked from: https://github.com/jackyaz/YazDHCP    ##${CLEARct}\\n"
 	printf "${BOLD}##                                                      ##${CLEARct}\\n"
 	printf "${BOLD}##########################################################${CLEARct}\\n"
 	printf "\n"
