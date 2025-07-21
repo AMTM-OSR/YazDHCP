@@ -10,9 +10,10 @@
 ##     |_| \__,_|/___||_____/ |_|  |_| \_____||_|       ##
 ##                                                      ##
 ##         https://github.com/AMTM-OSR/YazDHCP/         ##
+##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2025-May-26
+# Last Modified: 2025-Jul-20
 #---------------------------------------------------------
 
 #############################################
@@ -28,8 +29,9 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
-readonly SCRIPT_VERSION="v1.0.8"
-SCRIPT_BRANCH="master"
+readonly SCRIPT_VERSION="v1.0.9"
+readonly SCRIPT_VERSTAG="25072023"
+SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
 readonly SCRIPT_CONF="$SCRIPT_DIR/DHCP_clients"
@@ -64,6 +66,8 @@ readonly fwInstalledBaseVers="$(nvram get firmver | sed 's/\.//g')"
 readonly fwInstalledBuildVers="$(nvram get buildno)"
 readonly fwInstalledBranchVer="${fwInstalledBaseVers}.${fwInstalledBuildVers}"
 readonly scriptVersRegExp="v[0-9]{1,2}([.][0-9]{1,2})([.][0-9]{1,2})"
+readonly branchx_TAG="Branch: $SCRIPT_BRANCH"
+readonly version_TAG="${SCRIPT_VERSION}_${SCRIPT_VERSTAG}"
 
 # Give higher priority to built-in binaries #
 export PATH="/bin:/usr/bin:/sbin:/usr/sbin:$PATH"
@@ -126,9 +130,11 @@ readonly CLRct="\e[0m"
 readonly BOLDtext="\e[1m"
 readonly LghtRED="\e[1;31m"
 readonly LghtGREEN="\e[1;32m"
+readonly MGNTct="\e[1;35m"
 readonly REDct="${LghtRED}${BOLDtext}"
 readonly GRNct="${LghtGREEN}${BOLDtext}"
 readonly WarnBYLWct="\e[30;103m"
+readonly theExitStr="${GRNct}e${CLRct}=Exit"
 
 readonly MaxBckupsOpt="mx"
 readonly BackupDirOpt="dp"
@@ -1952,7 +1958,6 @@ ShowIconsMenuOptions()
 IconsMenuSelectionHandler()
 {
    local exitMenu=false  retCode
-   local theExitStr="${GRNct}e${CLRct}=Exit"
 
    until ! ShowIconsMenuOptions
    do
@@ -2365,10 +2370,10 @@ ScriptHeader()
 	printf "${BOLD}##     | || (_| | / / | |__| || |  | || |____ | |       ##${CLEARct}\\n"
 	printf "${BOLD}##     |_| \__,_|/___||_____/ |_|  |_| \_____||_|       ##${CLEARct}\\n"
 	printf "${BOLD}##                                                      ##${CLEARct}\\n"
-	printf "${BOLD}##                %9s on %-18s       ##${CLEARct}\n" "$SCRIPT_VERSION" "$ROUTER_MODEL"
+	printf "${BOLD}##              %9s on %-18s         ##${CLEARct}\n" "$SCRIPT_VERSION" "$ROUTER_MODEL"
 	printf "${BOLD}##                                                      ##${CLEARct}\\n"
 	printf "${BOLD}##         https://github.com/AMTM-OSR/YazDHCP          ##${CLEARct}\\n"
-	printf "${BOLD}##   Forked from: https://github.com/jackyaz/YazDHCP    ##${CLEARct}\\n"
+	printf "${BOLD}##    Forked from https://github.com/jackyaz/YazDHCP    ##${CLEARct}\\n"
 	printf "${BOLD}##                                                      ##${CLEARct}\\n"
 	printf "${BOLD}##########################################################${CLEARct}\\n"
 	printf "\n"
@@ -2673,13 +2678,15 @@ Check_Requirements()
 {
 	CHECKSFAILED="false"
 
-	if [ "$(nvram get jffs2_scripts)" -ne 1 ]; then
+	if [ "$(nvram get jffs2_scripts)" -ne 1 ]
+	then
 		nvram set jffs2_scripts=1
 		nvram commit
 		Print_Output true "Custom JFFS Scripts enabled" "$WARN"
 	fi
 
-	if ! Firmware_Version_Check; then
+	if ! Firmware_Version_Check
+	then
 		Print_Output true "Unsupported firmware version detected" "$ERR"
 		Print_Output true "$SCRIPT_NAME requires Merlin 384.15/384.13_4 or Fork 43E5 (or later)" "$ERR"
 		CHECKSFAILED="true"
@@ -2692,11 +2699,63 @@ Check_Requirements()
 	fi
 }
 
+##-------------------------------------##
+## Added by Martinski W. [2025-Jul-20] ##
+##-------------------------------------##
+Show_Help()
+{
+	printf "HELP ${MGNTct}${SCRIPT_VERS_INFO}${CLRct}\n"
+	cat <<EOF
+Available commands:
+  $SCRIPT_NAME about            explains functionality
+  $SCRIPT_NAME update           checks for updates
+  $SCRIPT_NAME forceupdate      updates to latest version (force update)
+  $SCRIPT_NAME startup force    runs startup actions such as mount WebUI tab
+  $SCRIPT_NAME backupicons      backs up custom user icons from '/jffs/usericon/'
+  $SCRIPT_NAME restoreicons     restores custom user icons to '/jffs/usericon/'
+  $SCRIPT_NAME install          installs script
+  $SCRIPT_NAME uninstall        uninstalls script
+  $SCRIPT_NAME develop          switch to development branch version
+  $SCRIPT_NAME stable           switch to stable/production branch version
+EOF
+	printf "\n"
+}
+
+##-------------------------------------##
+## Added by Martinski W. [2025-Jul-20] ##
+##-------------------------------------##
+Show_About()
+{
+	printf "About ${MGNTct}${SCRIPT_VERS_INFO}${CLRct}\n"
+	cat <<EOF
+  $SCRIPT_NAME is a feature expansion of the manual DHCP IP assignments on
+  AsusWRT-Merlin firmware to read and write DHCP IP address reservations,
+  including optional hostname and DNS server, and to increase the limit
+  of the maximum number of manually assigned reservations.
+
+License
+  $SCRIPT_NAME is free to use under the GNU General Public License
+  version 3 (GPL-3.0) https://opensource.org/licenses/GPL-3.0
+
+Help & Support
+  https://www.snbforums.com/forums/asuswrt-merlin-addons.60/?prefix_id=31
+
+Source code
+  https://github.com/AMTM-OSR/$SCRIPT_NAME
+EOF
+	printf "\n"
+}
+
 ##----------------------------------------##
 ## Modified by Martinski W. [2024-Feb-26] ##
 ##----------------------------------------##
 # Catch unexpected exit to release lock #
 trap 'Clear_Lock; exit 10' EXIT HUP INT QUIT ABRT TERM
+
+if [ "$SCRIPT_BRANCH" = "master" ]
+then SCRIPT_VERS_INFO="[$branchx_TAG]"
+else SCRIPT_VERS_INFO="[$version_TAG, $branchx_TAG]"
+fi
 
 if [ $# -eq 0 ] || [ -z "$1" ]
 then
@@ -2806,6 +2865,16 @@ case "$1" in
 		SCRIPT_BRANCH="master"
 		SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 		Update_Version force
+		exit 0
+	;;
+	about)
+		ScriptHeader
+		Show_About
+		exit 0
+	;;
+	help)
+		ScriptHeader
+		Show_Help
 		exit 0
 	;;
 	*)
