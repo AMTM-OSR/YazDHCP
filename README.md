@@ -1,8 +1,8 @@
 # YazDHCP
 
-## v1.0.9
+## v1.0.10
 
-### Updated on 2025-Jul-20
+### Updated on 2025-Aug-05
 
 ## About
 
