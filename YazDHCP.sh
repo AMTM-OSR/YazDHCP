@@ -13,7 +13,7 @@
 ##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2025-Jul-20
+# Last Modified: 2025-Aug-05
 #---------------------------------------------------------
 
 #############################################
@@ -29,9 +29,9 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
-readonly SCRIPT_VERSION="v1.0.9"
-readonly SCRIPT_VERSTAG="25072023"
-SCRIPT_BRANCH="master"
+readonly SCRIPT_VERSION="v1.0.10"
+readonly SCRIPT_VERSTAG="25080521"
+SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
 readonly SCRIPT_CONF="$SCRIPT_DIR/DHCP_clients"
@@ -914,11 +914,13 @@ Auto_ServiceEvent()
 {
 	case $1 in
 		create)
-			if [ -f /jffs/scripts/service-event ]; then
+			if [ -f /jffs/scripts/service-event ]
+			then
 				STARTUPLINECOUNT=$(grep -c '# '"$SCRIPT_NAME" /jffs/scripts/service-event)
 				STARTUPLINECOUNTEX=$(grep -cx 'if echo "$2" | /bin/grep -q "'"$SCRIPT_NAME"'" ; then { /jffs/scripts/'"$SCRIPT_NAME"' service_event "$@" & }; fi # '"$SCRIPT_NAME" /jffs/scripts/service-event)
 
-				if [ "$STARTUPLINECOUNT" -gt 1 ] || { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ]; }; then
+				if [ "$STARTUPLINECOUNT" -gt 1 ] || { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ]; }
+				then
 					sed -i -e '/# '"$SCRIPT_NAME"'/d' /jffs/scripts/service-event
 				fi
 
@@ -933,7 +935,8 @@ Auto_ServiceEvent()
 			fi
 		;;
 		delete)
-			if [ -f /jffs/scripts/service-event ]; then
+			if [ -f /jffs/scripts/service-event ]
+			then
 				STARTUPLINECOUNT=$(grep -c '# '"$SCRIPT_NAME" /jffs/scripts/service-event)
 
 				if [ "$STARTUPLINECOUNT" -gt 0 ]; then
@@ -948,11 +951,13 @@ Auto_Startup()
 {
 	case $1 in
 		create)
-			if [ -f /jffs/scripts/services-start ]; then
+			if [ -f /jffs/scripts/services-start ]
+			then
 				STARTUPLINECOUNT=$(grep -c '# '"$SCRIPT_NAME" /jffs/scripts/services-start)
 				STARTUPLINECOUNTEX=$(grep -cx "/jffs/scripts/$SCRIPT_NAME startup"' "$@" & # '"$SCRIPT_NAME" /jffs/scripts/services-start)
 
-				if [ "$STARTUPLINECOUNT" -gt 1 ] || { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ]; }; then
+				if [ "$STARTUPLINECOUNT" -gt 1 ] || { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ]; }
+				then
 					sed -i -e '/# '"$SCRIPT_NAME"'/d' /jffs/scripts/services-start
 				fi
 
@@ -967,7 +972,8 @@ Auto_Startup()
 			fi
 		;;
 		delete)
-			if [ -f /jffs/scripts/services-start ]; then
+			if [ -f /jffs/scripts/services-start ]
+			then
 				STARTUPLINECOUNT=$(grep -c '# '"$SCRIPT_NAME" /jffs/scripts/services-start)
 
 				if [ "$STARTUPLINECOUNT" -gt 0 ]; then
@@ -1070,7 +1076,8 @@ Auto_DNSMASQ()
 			"$CONFCHANGED" && "$doRESTART" && service restart_dnsmasq >/dev/null 2>&1
 		;;
 		delete)
-			if [ -f /jffs/configs/dnsmasq.conf.add ]; then
+			if [ -f /jffs/configs/dnsmasq.conf.add ]
+			then
 				CONFCHANGED="false"
 				STARTUPLINECOUNT=$(grep -c "# ${SCRIPT_NAME}_hostnames" /jffs/configs/dnsmasq.conf.add)
 
@@ -1123,7 +1130,7 @@ Mount_WebUI()
 ##-------------------------------------##
 _CheckFor_WebGUI_Page_()
 {
-   if [ "$(grep -c 'YazDHCP' /www/Advanced_DHCP_Content.asp)" -lt 10 ]
+   if [ "$(grep -c 'YazDHCP' /www/Advanced_DHCP_Content.asp)" -lt 8 ]
    then Mount_WebUI ; fi
 }
 
@@ -1131,7 +1138,8 @@ Shortcut_Script()
 {
 	case $1 in
 		create)
-			if [ -d /opt/bin ] && [ ! -f "/opt/bin/$SCRIPT_NAME" ] && [ -f "/jffs/scripts/$SCRIPT_NAME" ]; then
+			if [ -d /opt/bin ] && [ ! -f "/opt/bin/$SCRIPT_NAME" ] && [ -f "/jffs/scripts/$SCRIPT_NAME" ]
+			then
 				ln -s /jffs/scripts/"$SCRIPT_NAME" /opt/bin
 				chmod 0755 /opt/bin/"$SCRIPT_NAME"
 			fi
