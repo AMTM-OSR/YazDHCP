@@ -13,7 +13,7 @@
 ##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2025-Sep-19
+# Last Modified: 2025-Sep-23
 #---------------------------------------------------------
 
 #############################################
@@ -30,7 +30,7 @@
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
 readonly SCRIPT_VERSION="v1.2.0"
-readonly SCRIPT_VERSTAG="25091923"
+readonly SCRIPT_VERSTAG="25092320"
 SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
@@ -652,7 +652,6 @@ Check_CustomUserIconsConfig()
    fi
    GetUserIconsSavedVars
 }
-
 
 ##-------------------------------------##
 ## Added by Martinski W. [2025-Sep-05] ##
@@ -1310,7 +1309,7 @@ _Get_DHCP_NetworkTagStr_()
         then
             [ "$fwInstalledBaseVers" -ge 3006 ] && \
             dhcpNetwkTagID="$(echo "$dhcpNoIFaceID" | cut -d'=' -f2)"
-            dnsmasqIndxNum=ZERO   #NO DHCP Interface#
+            ##OFF## dnsmasqIndxNum=ZERO  #*WITHOUT* DHCP Server??#
         fi
     done
 
@@ -1764,8 +1763,13 @@ _CleanUp_DNSMasqConfigFiles_()
         then continue
         fi
         configAddFile="${JFFS_Configs_Dir}/${configFName}.add"
-        if ! grep -qE "^($staticAddRegExp|$optionAddRegExp).*" "$configAddFile" 
-        then continue
+        if [ ! -s "$configAddFile" ] || \
+           ! grep -qE "^($staticAddRegExp|$optionAddRegExp).*" "$configAddFile"
+        then
+            ## Remove unused YazDHCP custom lines ##
+            sed -i "\\~^${staticAddRegExp}.*~d" "$configFPATH"
+            sed -i "\\~^${optionAddRegExp}.*~d" "$configFPATH"
+            continue
         fi
         isConfigAddFileOK=false
         for gnIFaceName in $gnListOfIFaces
@@ -4385,7 +4389,7 @@ Menu_Install()
 	then
 		_Check_ActiveGuestNetwork_SubnetInfo_
 	fi
-     Auto_DNSMASQ create
+	Auto_DNSMASQ create
 
 	if "$webUIupdateOK"
 	then
