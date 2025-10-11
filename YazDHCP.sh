@@ -13,7 +13,7 @@
 ##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2025-Oct-10
+# Last Modified: 2025-Oct-11
 #---------------------------------------------------------
 
 #############################################
@@ -30,7 +30,7 @@
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
 readonly SCRIPT_VERSION="v1.2.0"
-readonly SCRIPT_VERSTAG="25101023"
+readonly SCRIPT_VERSTAG="25101102"
 SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
@@ -208,7 +208,7 @@ theBackupFilesMatch="${userIconsBackupFPath}_*.$userIconsSavedFLEextn"
 # Remove all "color escape sequences" from the system log file entries #
 _RemoveColorEscapeSequences_()
 {
-    if [ $# -eq 0 ] || [ -z "$1" ] ; then return echo ; fi
+    if [ $# -eq 0 ] || [ -z "$1" ] ; then echo ; return 0 ; fi
     echo "$1" | sed 's/\\e\[[0-1]m//g; s/\\e\[[3-4][0-9]m//g; s/\\e\[[0-1];[3-4][0-9]m//g; s/\\e\[30;10[1-9]m//g; s/\\n/ /g'
 }
 
@@ -1267,7 +1267,7 @@ _Get_DHCP_NetworkTagStr_()
     then echo ; return 1
     fi
     local dnsmasqFileStr="/etc/dnsmasq.conf"  theIPaddr3
-    local dnsmasqFilePath  dhcpOptionStr  dhcpRangeStr  dhcpNoIFaceID
+    local dhcpOptionStr  dhcpRangeStr  dhcpNoIFaceID
 
     if [ "$fwInstalledBaseVers" -ge 3006 ] && \
        { [ $# -lt 2 ] || [ "$2" != "MainLAN" ] ; }
@@ -1712,7 +1712,7 @@ _CleanUp_DNSMasqConfigFiles_()
     fi
     local gnInfoStr  gnListOfIFaces  gnIFaceName
     local staticAddRegExp  optionAddRegExp  configAddPrefix
-    local configFPath  confAddFBKUP  configFName  configAddFile
+    local confAddFBKUP  configFName  configAddFile
 
     configAddPrefix="${JFFS_Configs_Dir}/dnsmasq-"
     staticAddRegExp="dhcp-hostsfile=${SCRIPT_DIR}/.staticlist_"
