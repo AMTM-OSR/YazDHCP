@@ -50,6 +50,7 @@ dhcp-optsfile=/jffs/addons/YazDHCP.d/.optionslist #YazDHCP_optionslist#
 ```
 
 dhcp-hostsfile contains a list of MAC-address-to-IP-address bindings to reserve a specific DHCP IP address for a MAC address.
+
 dhcp-optsfile contains a list of MAC-address-to-DNS-server-address bindings to provide the specified DNS server as a DHCP option for a MAC address.
 
 ## "DHCP Lease" time values
