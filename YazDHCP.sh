@@ -13,7 +13,7 @@
 ##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2025-Sep-23
+# Last Modified: 2025-Oct-10
 #---------------------------------------------------------
 
 #############################################
@@ -30,7 +30,7 @@
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
 readonly SCRIPT_VERSION="v1.2.0"
-readonly SCRIPT_VERSTAG="25092320"
+readonly SCRIPT_VERSTAG="25101023"
 SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
@@ -3290,16 +3290,55 @@ _Export_DHCP_NVRAM_OLD_FW_Versions_()
 	fi
 }
 
+##-------------------------------------##
+## Added by Martinski W. [2025-Oct-10] ##
+##-------------------------------------##
+_CheckFor_UserCustom_IPaddr_Reservations_()
+{
+    local retCode=1  configAddRegExp  configAddFPath
+
+    configAddRegExp="${JFFS_Configs_Dir}/dnsmasq*.conf.add"
+    for configAddFPath in $(ls -1 $configAddRegExp 2>/dev/null)
+    do
+        if [ -s "$configAddFPath" ] && \
+           grep -qE "^dhcp-host=.*${IPv4privtx_RegEx}" "$configAddFPath"
+        then retCode=0 ; break
+        fi
+    done
+    return "$retCode"
+}
+
+##-------------------------------------##
+## Added by Martinski W. [2025-Oct-10] ##
+##-------------------------------------##
+_NoticeFor_UserCustom_IPaddr_Reservations_()
+{
+	if _CheckFor_UserCustom_IPaddr_Reservations_
+	then
+		printf "\n${WarnBYLWct}*NOTE*:${CLRct}\n"
+		printf "${BOLD}YazDHCP will *NOT* transfer any IP address reservations found in\n"
+		printf "user-supplied custom files (e.g. ${WARN}/jffs/configs/dnsmasq*.conf.add${CLRct}).\n"
+		printf "If you have such files, you will need to manually transfer all the\n"
+		printf "IP address reservations to YazDHCP and then remove the entries from\n"
+		printf "your custom files to prevent dnsmasq from getting duplicates.${CLRct}\n"
+		if [ $# -gt 0 ] && [ "$1" = "true" ]
+		then echo ; PressEnter ; echo ; fi
+	fi
+}
+
 ##----------------------------------------##
-## Modified by Martinski W. [2025-Sep-05] ##
+## Modified by Martinski W. [2025-Oct-10] ##
 ##----------------------------------------##
 Export_FW_DHCP_NVRAM_JFFS()
 {
 	printf "\n${BOLD}Do you want to export DHCP IP address assignments and hostnames"
-	printf "\nfrom NVRAM to %s internal client files?${CLEARct}\n" "$SCRIPT_NAME"
-	printf "\n%s will make backups of the existing NVRAM/JFFS DHCP data" "$SCRIPT_NAME"
-	printf "\nas part of this export process.\n"
-	printf "\n${BOLD}Enter answer (y/n):${CLEARct}  "
+	printf "\nfrom NVRAM to %s internal client files?\n" "$SCRIPT_NAME"
+	printf "\n%s will make backups of all the existing NVRAM DHCP data" "$SCRIPT_NAME"
+	printf "\nas part of this export process.${CLRct}\n"
+
+	_NoticeFor_UserCustom_IPaddr_Reservations_
+
+	printf "\n${BOLD}Confirm export from NVRAM? (y|n):${CLEARct}  "
 	read -r confirm
 	case "$confirm" in
 		y|Y)
@@ -4286,15 +4325,18 @@ MainMenu()
 				if "$dhcpStaticIPsOK" && _Get_ActiveGuestNetwork_VirtualInterfaces_
 				then
 					if ! "$allowGuestNetIPaddrReservations"
-					then _AllowGuestNetwork_IP_Reservations_ enable
-					else _AllowGuestNetwork_IP_Reservations_ disable
+					then
+						_NoticeFor_UserCustom_IPaddr_Reservations_ true
+						_AllowGuestNetwork_IP_Reservations_ enable
+					else
+						_AllowGuestNetwork_IP_Reservations_ disable
 					fi
 					echo
 				elif "$dhcpStaticIPsOK"
-                    then
+				then
 					printf "\n${WARN}No available Guest Network with a subnet range separate from the main LAN subnet was found.${CLEARct}\n\n"
-                    else
-                         printf "\n${WARN}The feature to manually assigned DHCP IP address reservations is NOT enabled on the webUI page.${CLEARct}\n\n"
+				else
+					printf "\n${WARN}The feature to manually assigned DHCP IP address reservations is NOT enabled on the webUI page.${CLEARct}\n\n"
 				fi
 				PressEnter
 				break
@@ -4365,8 +4407,8 @@ Menu_Install()
 		httpStr="http"
 		portStr=""
 	fi
-	printf "%s will back up NVRAM/JFFS DHCP IP assignments during installation," "$SCRIPT_NAME"
-     printf "\nbut first you may wish to take screenshots of the following WebUI page:"
+	printf "%s will back up DHCP IP address assignments from NVRAM during installation," "$SCRIPT_NAME"
+	printf "\nbut first you may wish to take screenshots of the following WebUI page:"
 	printf "\n\n${GRNct}%s://%s%s/Advanced_DHCP_Content.asp${CLEARct}\n" "$httpStr" "$mainLAN_IPaddr" "$portStr"
 	printf "\n${BOLD}If you wish to take screenshots, please do so now before the WebUI page\nis updated by %s${CLEARct}.\n" "$SCRIPT_NAME"
 	printf "\n${BOLD}Press the <Enter> key when you are ready to continue...${CLEARct}\n"
