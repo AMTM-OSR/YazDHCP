@@ -58,7 +58,7 @@ thead.collapsible-jquery {
 <script>
 
 /**----------------------------------------**/
-/** Modified by Martinski W. [2025-Sep-19] **/
+/** Modified by Martinski W. [2025-Oct-05] **/
 /**----------------------------------------**/
 
 const actionScriptPrefix = "start_YazDHCP";
@@ -1776,7 +1776,7 @@ function Check_IPaddrAssigmentOK (theIPaddr)
 				gnBackgrndColor = gnColorArray[indx].Backgrnd;
 				gnForegrndColor = gnColorArray[indx].Foregrnd;
 				return true;
-               }
+			}
 		}
 	}
 	return false;
