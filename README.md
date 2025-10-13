@@ -1,8 +1,8 @@
 # YazDHCP
 
-## v1.0.10
+## v1.2.0
 
-### Updated on 2025-Aug-05
+### Updated on 2025-Oct-11
 
 ## About
 
@@ -26,7 +26,7 @@ Using your preferred SSH client/terminal, copy and paste the following command, 
 
 YazDHCP leverages the existing [LAN - DHCP Server](http://router.asus.com/Advanced_DHCP_Content.asp) page in the AsusWRT-Merlin WebUI. It has been modified under the hood to read and write to files in /jffs/addons/YazDHCP.d/ via the Addons API.
 
-This allows us to use a greater amount of storage (6KB vs 2.5-3KB) for DHCP host assignments.
+This allows us to use a greater amount of storage (~7KB vs 2.5-3KB) for DHCP IP address and hostname assignments.
 
 To launch the command line menu for YazDHCP after installation, use:
 
@@ -42,17 +42,16 @@ If you do not have Entware installed, you will need to use the full path:
 
 ## Changes made to dnsmasq configuration
 
-YazDHCP adds 3 lines to dnsmasq.conf.add to configure DHCP reservations:
+YazDHCP adds 2 lines to dnsmasq.conf.add to configure DHCP IP address reservations:
 
 ```sh
-addn-hosts=/jffs/addons/YazDHCP.d/.hostnames # YazDHCP_hostnames
-dhcp-hostsfile=/jffs/addons/YazDHCP.d/.staticlist # YazDHCP_staticlist
-dhcp-optsfile=/jffs/addons/YazDHCP.d/.optionslist # YazDHCP_optionslist
+dhcp-hostsfile=/jffs/addons/YazDHCP.d/.staticlist #YazDHCP_staticlist#
+dhcp-optsfile=/jffs/addons/YazDHCP.d/.optionslist #YazDHCP_optionslist#
 ```
 
-addn-hosts contains a list of IP address to hostname mappings, for DNS resolution of DHCP reserved clients
-dhcp-hostsfile contains a list of MAC address to IP address bindings, to reserve a DHCP IP address for a MAC address
-dhcp-optsfile contains a list of MAC address to DNS server address bindings, to provide the specified DNS server as a DHCP option for a MAC address
+dhcp-hostsfile contains a list of MAC-address-to-IP-address bindings to reserve a specific DHCP IP address for a MAC address.
+
+dhcp-optsfile contains a list of MAC-address-to-DNS-server-address bindings to provide the specified DNS server as a DHCP option for a MAC address.
 
 ## "DHCP Lease" time values
 
