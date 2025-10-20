@@ -13,7 +13,7 @@
 ##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2025-Oct-18
+# Last Modified: 2025-Oct-20
 #---------------------------------------------------------
 
 #############################################
@@ -30,7 +30,7 @@
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
 readonly SCRIPT_VERSION="v1.2.1"
-readonly SCRIPT_VERSTAG="25101809"
+readonly SCRIPT_VERSTAG="25102001"
 SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
@@ -291,6 +291,12 @@ Clear_Lock()
 	rm -f "/tmp/$SCRIPT_NAME.lock" 2>/dev/null
 	return 0
 }
+
+##-------------------------------------##
+## Added by Martinski W. [2025-Oct-20] ##
+##-------------------------------------##
+_EscapeChars_()
+{ printf "%s" "$1" | sed 's/[][\/$.*^&-]/\\&/g' ; }
 
 ##-------------------------------------##
 ## Added by Martinski W. [2025-Sep-07] ##
@@ -1267,8 +1273,9 @@ _Get_DHCP_NetworkTagStr_()
     if [ $# -eq 0 ] || [ -z "$1" ]
     then echo ; return 1
     fi
-    local dnsmasqFileStr="/etc/dnsmasq.conf"  theIPaddr3
+    local dnsmasqFileStr="/etc/dnsmasq.conf"
     local dhcpOptionStr  dhcpRangeStr  dhcpNoIFaceID
+    local theIPaddr3  ipAddr3str  ipAddr4str  ifaceNameStr
 
     if [ "$fwInstalledBaseVers" -ge 3006 ] && \
        { [ $# -lt 2 ] || [ "$2" != "MainLAN" ] ; }
@@ -1276,13 +1283,17 @@ _Get_DHCP_NetworkTagStr_()
     fi
     dnsmasqIndxNum=""
     dhcpNetwkTagID=""
+
+    ipAddr4str="$(_EscapeChars_ "$1")"
     theIPaddr3="$(echo "$1" | cut -d'.' -f1-3)"
+    ipAddr3str="$(_EscapeChars_ "$theIPaddr3")"
+    ifaceNameStr="$(_EscapeChars_ "$2")"
 
     for dnsmasqFile in $(ls -1 $dnsmasqFileStr 2>/dev/null)
     do
-        dhcpRangeStr="$(grep -E "^dhcp-range=.*,${theIPaddr3}[.].*," "$dnsmasqFile")"
-        dhcpOptionStr="$(grep -E "^dhcp-option=.*,(3|option:router),$1" "$dnsmasqFile")"
-        dhcpNoIFaceID="$(grep -E "^no-dhcp-interface=$2" "$dnsmasqFile")"
+        dhcpRangeStr="$(grep -E "^dhcp-range=.*,${ipAddr3str}[.].*," "$dnsmasqFile")"
+        dhcpOptionStr="$(grep -E "^dhcp-option=.*,(3|option:router),${ipAddr4str}" "$dnsmasqFile")"
+        dhcpNoIFaceID="$(grep -E "^no-dhcp-interface=$ifaceNameStr" "$dnsmasqFile")"
         if [ -z "$dhcpOptionStr" ] && [ -z "$dhcpRangeStr" ] && [ -z "$dhcpNoIFaceID" ]
         then continue
         fi
@@ -1323,29 +1334,33 @@ _Get_DHCP_NetworkTagStr_()
 ##-------------------------------------##
 _Add_GuestNetwork_SubnetInfo_()
 {
-    local gnIFaceVarStr="GNIFACE_${gnIFaceName}"
+    local gnIFaceVarDef="GNIFACE_${gnIFaceName}"
     local gnIFaceInfoDef  dhcpNetwkTagID=NONE  dnsmasqIndxNum=ZERO
+    local gnIFaceVarDefStr  gnIFaceInfoDefStr
 
     _Get_DHCP_NetworkTagStr_ "$gnStartIPadd" "$gnIFaceName"
-    gnIFaceInfoDef="${gnIFaceVarStr}=${gnStartIPadd},${gnSubnetMask},${gnSubnetCIDR},${dhcpNetwkTagID},${dnsmasqIndxNum}"
+    gnIFaceInfoDef="${gnIFaceVarDef}=${gnStartIPadd},${gnSubnetMask},${gnSubnetCIDR},${dhcpNetwkTagID},${dnsmasqIndxNum}"
+
+    gnIFaceVarDefStr="$(_EscapeChars_ "gnIFaceVarDef")"
+    gnIFaceInfoDefStr="$(_EscapeChars_ "gnIFaceInfoDef")"
 
     if [ "$dhcpNetwkTagID" = "NONE" ] || \
        { [ "$fwInstalledBaseVers" -ge 3006 ] && [ "$dnsmasqIndxNum" = "ZERO" ] ; }
     then
-        if grep -qE "^${gnIFaceVarStr}=.*" "$dhcpGuestNetConfigFPath" 
+        if grep -qE "^${gnIFaceVarDefStr}=.*" "$dhcpGuestNetConfigFPath" 
         then
-            sed -i "/^${gnIFaceVarStr}=.*/d" "$dhcpGuestNetConfigFPath"
+            sed -i "/^${gnIFaceVarDefStr}=.*/d" "$dhcpGuestNetConfigFPath"
         fi
         return 1
     fi
-    if grep -qE "^${gnIFaceInfoDef}$" "$dhcpGuestNetConfigFPath"
+    if grep -qE "^${gnIFaceInfoDefStr}$" "$dhcpGuestNetConfigFPath"
     then return 0
     fi
-    if ! grep -qE "^${gnIFaceVarStr}=.*" "$dhcpGuestNetConfigFPath" 
+    if ! grep -qE "^${gnIFaceVarDefStr}=.*" "$dhcpGuestNetConfigFPath" 
     then
         echo "$gnIFaceInfoDef" >> "$dhcpGuestNetConfigFPath"
     else
-        sed -i "s~^${gnIFaceVarStr}=.*~${gnIFaceInfoDef}~" "$dhcpGuestNetConfigFPath"
+        sed -i "s~^${gnIFaceVarDefStr}=.*~${gnIFaceInfoDef}~" "$dhcpGuestNetConfigFPath"
     fi
     return 0
 }
@@ -3556,7 +3571,7 @@ Update_Hostnames_GuestNet()
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2025-Oct-18] ##
+## Modified by Martinski W. [2025-Oct-19] ##
 ##----------------------------------------##
 Update_StaticList_MainLAN()
 {
@@ -3569,7 +3584,9 @@ Update_StaticList_MainLAN()
 	while IFS=',' read -r theMACaddr theIPaddr4 theHostName theDNSaddr
 	do
 		if [ "$theMACaddr" = "MAC" ] || \
-		   [ -z "$theMACaddr" ] || [ -z "$theIPaddr4" ]
+		   [ -z "$theMACaddr" ] || [ -z "$theIPaddr4" ] || \
+		   ! echo "$theMACaddr" | grep -qE "^${MACaddr_RegEx}$" || \
+		   ! echo "$theIPaddr4" | grep -qE "^${IPv4privtx_RegEx}$"
 		then continue
 		fi
 		if [ -z "$theHostName" ]
@@ -3656,7 +3673,9 @@ Update_StaticList_GuestNet()
 		while IFS=',' read -r theMACaddr theIPaddr4 theHostName theDNSaddr
 		do
 			if [ "$theMACaddr" = "MAC" ] || \
-			   [ -z "$theMACaddr" ] || [ -z "$theIPaddr4" ]
+			   [ -z "$theMACaddr" ] || [ -z "$theIPaddr4" ] || \
+			   ! echo "$theMACaddr" | grep -qE "^${MACaddr_RegEx}$" || \
+			   ! echo "$theIPaddr4" | grep -qE "^${IPv4privtx_RegEx}$"
 			then continue
 			fi
 			if [ -z "$theHostName" ]
@@ -3746,7 +3765,7 @@ CleanUp_StaticList_GuestNet()
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2025-Oct-18] ##
+## Modified by Martinski W. [2025-Oct-19] ##
 ##----------------------------------------##
 Update_OptionsList_MainLAN()
 {
@@ -3758,8 +3777,10 @@ Update_OptionsList_MainLAN()
 
 	while IFS=',' read -r theMACaddr theIPaddr4 theHostName theDNSaddr
 	do
-		if [ "$theMACaddr" = "MAC" ] || \
-		   [ -z "$theDNSaddr" ] || [ -z "$theIPaddr4" ]
+		if [ "$theMACaddr" = "MAC" ] || [ -z "$theDNSaddr" ] || \
+		   [ -z "$theMACaddr" ] || [ -z "$theIPaddr4" ]      || \
+		   ! echo "$theMACaddr" | grep -qE "^${MACaddr_RegEx}$" || \
+		   ! echo "$theIPaddr4" | grep -qE "^${IPv4privtx_RegEx}$"
 		then continue
 		fi
 		if [ -z "$dhcpNetwkTagID" ] || [ "$dhcpNetwkTagID" = "NONE" ]
@@ -3841,8 +3862,10 @@ Update_OptionsList_GuestNet()
 
 		while IFS=',' read -r theMACaddr theIPaddr4 theHostName theDNSaddr
 		do
-			if [ "$theMACaddr" = "MAC" ] || \
-			   [ -z "$theDNSaddr" ] || [ -z "$theIPaddr4" ]
+			if [ "$theMACaddr" = "MAC" ] || [ -z "$theDNSaddr" ] || \
+			   [ -z "$theMACaddr" ] || [ -z "$theIPaddr4" ]      || \
+			   ! echo "$theMACaddr" | grep -qE "^${MACaddr_RegEx}$" || \
+			   ! echo "$theIPaddr4" | grep -qE "^${IPv4privtx_RegEx}$"
 			then continue
 			fi
 			if [ -z "$dhcpNetwkTagID" ] || [ "$dhcpNetwkTagID" = "NONE" ]
