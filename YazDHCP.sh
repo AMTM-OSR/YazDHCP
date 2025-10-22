@@ -30,7 +30,7 @@
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
 readonly SCRIPT_VERSION="v1.2.1"
-readonly SCRIPT_VERSTAG="25102001"
+readonly SCRIPT_VERSTAG="25102022"
 SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
@@ -1292,7 +1292,7 @@ _Get_DHCP_NetworkTagStr_()
     for dnsmasqFile in $(ls -1 $dnsmasqFileStr 2>/dev/null)
     do
         dhcpRangeStr="$(grep -E "^dhcp-range=.*,${ipAddr3str}[.].*," "$dnsmasqFile")"
-        dhcpOptionStr="$(grep -E "^dhcp-option=.*,(3|option:router),${ipAddr4str}" "$dnsmasqFile")"
+        dhcpOptionStr="$(grep -E "^dhcp-option=.*,(3|option:router),${ipAddr4str}([,].*)?$" "$dnsmasqFile")"
         dhcpNoIFaceID="$(grep -E "^no-dhcp-interface=$ifaceNameStr" "$dnsmasqFile")"
         if [ -z "$dhcpOptionStr" ] && [ -z "$dhcpRangeStr" ] && [ -z "$dhcpNoIFaceID" ]
         then continue
