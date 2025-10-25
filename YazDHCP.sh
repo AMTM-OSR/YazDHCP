@@ -13,7 +13,7 @@
 ##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2025-Oct-20
+# Last Modified: 2025-Oct-24
 #---------------------------------------------------------
 
 #############################################
@@ -30,7 +30,7 @@
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
 readonly SCRIPT_VERSION="v1.2.1"
-readonly SCRIPT_VERSTAG="25102022"
+readonly SCRIPT_VERSTAG="25102422"
 SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
