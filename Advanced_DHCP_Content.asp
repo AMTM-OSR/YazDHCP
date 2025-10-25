@@ -58,7 +58,7 @@ thead.collapsible-jquery {
 <script>
 
 /**----------------------------------------**/
-/** Modified by Martinski W. [2025-Oct-05] **/
+/** Modified by Martinski W. [2025-Oct-18] **/
 /**----------------------------------------**/
 
 const actionScriptPrefix = "start_YazDHCP";
@@ -1544,36 +1544,40 @@ function AddEventHandlers(){
 }
 
 /**----------------------------------------**/
-/** Modified by Martinski W. [2025-Sep-05] **/
+/** Modified by Martinski W. [2025-Oct-18] **/
 /**----------------------------------------**/
 function addRow_Group(maxLimit)
 {
-	if(dhcp_enable != "1"){
+	if (dhcp_enable != "1"){
 		document.form.dhcp_enable_x[0].checked = true;
 	}
-	if(static_enable != "1"){
+	if (static_enable != "1"){
 		document.form.dhcp_static_x[0].checked = true;
 	}
 
 	var rule_num = Object.keys(manually_dhcp_list_array).length;
-	if(rule_num >= maxLimit){
+	if (rule_num >= maxLimit)
+	{
 		alert("This table allows only " + maxLimit + " items!");
 		return false;
 	}
 
-	if(document.form.dhcp_staticmac_x_0.value==""){
+	if (document.form.dhcp_staticmac_x_0.value == "")
+	{
 		alert("The MAC Address field cannot be blank.");
 		document.form.dhcp_staticmac_x_0.focus();
 		document.form.dhcp_staticmac_x_0.select();
 		return false;
 	}
-	else if(document.form.dhcp_staticip_x_0.value==""){
+	else if (document.form.dhcp_staticip_x_0.value == "")
+	{
 		alert("The IP Address field cannot be blank.");
 		document.form.dhcp_staticip_x_0.focus();
 		document.form.dhcp_staticip_x_0.select();
 		return false;
 	}
-	else if((document.form.dhcp_hostname_x_0.value != "") && ((alert_str = validator.host_name(document.form.dhcp_hostname_x_0)) != "")){
+	else if ((document.form.dhcp_hostname_x_0.value != "") && ((alert_str = validator.host_name(document.form.dhcp_hostname_x_0)) != ""))
+	{
 		alert(alert_str);
 		document.form.dhcp_hostname_x_0.focus();
 		document.form.dhcp_hostname_x_0.select();
@@ -1589,20 +1593,28 @@ function addRow_Group(maxLimit)
 			}
 		}
 
-		var match_flag = false, alertMsge;
+		let match_flag = false, alertMsge;
+		let entryMACaddr = document.form.dhcp_staticmac_x_0.value.toUpperCase();
+		let entryIPaddr4 = document.form.dhcp_staticip_x_0.value;
+		let entryIPaddr3 = entryIPaddr4.split(".", 3).join(".");
+		let entry_IP_Num = inet_network(entryIPaddr4);
+
+		let lanStartIPadd = document.form.lan_ipaddr.value;
+		let lanSubnetMask = document.form.lan_netmask.value;
+		let lanSubnetHead = getSubnet(lanStartIPadd, lanSubnetMask, "head");
+		let lanSubnetEndx = getSubnet(lanStartIPadd, lanSubnetMask, "end");
+
 		for (var key in manually_dhcp_list_array)
 		{
 			if (manually_dhcp_list_array.hasOwnProperty(key))
 			{
 				var exist_IP = key;
 				var exist_MAC = manually_dhcp_list_array[exist_IP].mac;
-				var entryMACaddr = document.form.dhcp_staticmac_x_0.value.toUpperCase();
 				var existIPaddr3 = exist_IP.split(".", 3).join(".");
-				var entryIPaddr4 = document.form.dhcp_staticip_x_0.value;
-				var entryIPaddr3 = entryIPaddr4.split(".", 3).join(".");
+				var exist_IP_num = inet_network(exist_IP);
 
 				/** Do NOT allow duplicate 'MAC + IP' address assignments **/
-				if (exist_MAC == entryMACaddr && exist_IP == entryIPaddr4)
+				if (entryMACaddr === exist_MAC && entryIPaddr4 === exist_IP)
 				{
 					alertMsge = `The client <b>${exist_MAC}</b> with IP address <b>${exist_IP}</b> already exists.`;
 					document.form.dhcp_staticmac_x_0.focus();
@@ -1611,18 +1623,8 @@ function addRow_Group(maxLimit)
 					match_flag = true;
 					break;
 				}
-				/** Do NOT allow the same MAC address IF already found in the same subnet **/
-				if (exist_MAC == entryMACaddr && existIPaddr3 == entryIPaddr3)
-				{
-					alertMsge = `The client <b>${exist_MAC}</b> already exists with another IP address on same subnet [<b>${existIPaddr3}.*</b>].`;
-					document.form.dhcp_staticmac_x_0.focus();
-					document.form.dhcp_staticmac_x_0.select();
-					AlertMsgBox.ShowAlert (alertMsge);
-					match_flag = true;
-					break;
-				}
 				/** Do NOT allow duplicate IP address assignments **/
-				if (exist_IP == entryIPaddr4)
+				if (entryIPaddr4 === exist_IP)
 				{
 					alertMsge = `This IP address <b>${exist_IP}</b> has already been assigned to another client.`;
 					document.form.dhcp_staticip_x_0.focus();
@@ -1631,14 +1633,28 @@ function addRow_Group(maxLimit)
 					match_flag = true;
 					break;
 				}
+				/** Do NOT allow the same MAC address IF already found in the same subnet **/
+				if (entryMACaddr === exist_MAC &&
+				    (entryIPaddr3 === existIPaddr3 ||
+				     ((exist_IP_num > lanSubnetHead && exist_IP_num < lanSubnetEndx) &&
+				      (entry_IP_Num > lanSubnetHead && entry_IP_Num < lanSubnetEndx))))
+				{
+					alertMsge = `The client <b>${exist_MAC}</b> already exists with another IP address <b>${exist_IP}</b> on the same subnet range.`;
+					document.form.dhcp_staticmac_x_0.focus();
+					document.form.dhcp_staticmac_x_0.select();
+					AlertMsgBox.ShowAlert (alertMsge);
+					match_flag = true;
+					break;
+				}
 			}
 		}
-		if (match_flag) return false;
+		if (match_flag) { return false; }
 
 		var alert_str = "";
-		if(document.form.dhcp_hostname_x_0.value.length > 0)
+		if (document.form.dhcp_hostname_x_0.value.length > 0)
 			alert_str = validator.host_name(document.form.dhcp_hostname_x_0);
-		if(alert_str != ""){
+		if (alert_str != "")
+		{
 			alert(alert_str);
 			document.form.dhcp_hostname_x_0.focus();
 			document.form.dhcp_hostname_x_0.select();
@@ -1663,7 +1679,8 @@ function addRow_Group(maxLimit)
 		sortlist(sortfield);
 		showdhcp_staticlist();
 
-		if(backup_mac != ""){
+		if (backup_mac != "")
+		{
 			backup_mac = "";
 			backup_ip = "";
 			backup_dns = "";
@@ -1671,7 +1688,8 @@ function addRow_Group(maxLimit)
 			document.getElementById('dhcp_staticlist_table').rows[rule_num-1].scrollIntoView();
 		}
 	}
-	else{
+	else
+	{
 		return false;
 	}
 }
@@ -1707,13 +1725,14 @@ function del_Row(obj)
 	}
 }
 
-function edit_Row(obj){
+function edit_Row(obj)
+{
 	cancel_Edit();
 
 	var i=obj.parentNode.parentNode.rowIndex;
 	document.form.dhcp_staticmac_x_0.value = document.getElementById('dhcp_staticlist_table').rows[i].cells[0].title;
 	document.form.dhcp_staticip_x_0.value = document.getElementById('dhcp_staticlist_table').rows[i].cells[1].innerHTML;
-	if(validator.ipv4_addr(document.getElementById('dhcp_staticlist_table').rows[i].cells[2].innerHTML, 'dhcp_dns1_x')){
+	if (validator.ipv4_addr(document.getElementById('dhcp_staticlist_table').rows[i].cells[2].innerHTML, 'dhcp_dns1_x')){
 		document.form.dhcp_dnsip_x_0.value = document.getElementById('dhcp_staticlist_table').rows[i].cells[2].innerHTML
 	}
 	document.form.dhcp_hostname_x_0.value = document.getElementById('dhcp_staticlist_table').rows[i].cells[3].title;
@@ -1725,14 +1744,17 @@ function edit_Row(obj){
 	document.form.dhcp_staticmac_x_0.focus();
 }
 
-function cancel_Edit(){
-	if(backup_mac != ""){
+function cancel_Edit()
+{
+	if (backup_mac != "")
+	{
 		document.form.dhcp_staticmac_x_0.value = backup_mac;
 		document.form.dhcp_staticip_x_0.value = backup_ip;
 		document.form.dhcp_dnsip_x_0.value = backup_dns;
 		document.form.dhcp_hostname_x_0.value = backup_name;
-		addRow_Group(maxNumRows);
+		return addRow_Group(maxNumRows);
 	}
+	return true;
 }
 
 /**-------------------------------------**/
@@ -1973,7 +1995,7 @@ function SubmitFormDataSettings (actionScriptValue)
 }
 
 /**----------------------------------------**/
-/** Modified by Martinski W. [2025-Sep-05] **/
+/** Modified by Martinski W. [2025-Oct-18] **/
 /**----------------------------------------**/
 function applyRule()
 {
@@ -1985,8 +2007,10 @@ function applyRule()
 
 		dhcp_staticlist_array = [];
 		dhcp_hostnames_array = [];
+		document.form.YazDHCP_clients.value = '';
 
-		Object.keys(manually_dhcp_list_array).forEach(function(key){
+		Object.keys(manually_dhcp_list_array).forEach(function(key)
+		{
 			var theIPvalue = key;
 			var lanIPaddr4, lanIPaddr3, theIPaddr3;
 
@@ -1998,18 +2022,24 @@ function applyRule()
 			if (theIPaddr3 === lanIPaddr3 && document.form.lan_netmask.value === "255.255.255.0")
 			{ theIPvalue = key.split(".")[3]; }
 
-			if (manually_dhcp_list_array[key].dns.length > 0 && manually_dhcp_list_array[key].hostname.length >= 0){
+			if (manually_dhcp_list_array[key].dns.length > 0 &&
+			    manually_dhcp_list_array[key].hostname.length >= 0)
+			{
 				document.form.YazDHCP_clients.value += "<" + manually_dhcp_list_array[key].mac + ">" + theIPvalue + ">" + manually_dhcp_list_array[key].hostname + ">" + manually_dhcp_list_array[key].dns + ">";
 			}
-			else if(manually_dhcp_list_array[key].dns.length == 0 && manually_dhcp_list_array[key].hostname.length > 0){
+			else if (manually_dhcp_list_array[key].dns.length == 0 &&
+			         manually_dhcp_list_array[key].hostname.length > 0)
+			{
 				document.form.YazDHCP_clients.value += "<" + manually_dhcp_list_array[key].mac + ">" + theIPvalue + ">" + manually_dhcp_list_array[key].hostname + ">";
 			}
-			else{
+			else
+			{
 				document.form.YazDHCP_clients.value += "<" + manually_dhcp_list_array[key].mac + ">" + theIPvalue + ">";
 			}
 		});
 
-		document.form.YazDHCP_clients.value = document.form.YazDHCP_clients.value.slice(0, -1).replace(/:/g,'|');
+		//Format MAC addresses with vertical bar//
+		document.form.YazDHCP_clients.value = document.form.YazDHCP_clients.value.replace(/:/g,'|');
 
 		/**----------------------------------------------**/
 		/** Added/Modified by Martinski W. [2023-Jan-28] **/
@@ -2021,13 +2051,15 @@ function applyRule()
 			alert("DHCP IP reservation list is too long (" + formValueLength + " characters exceeds limit of apiMaxLength)\r\nRemove some entries, or use shorter hostnames.");
 			return false;
 		}
-		else if (document.form.YazDHCP_clients.value.length > 2999 && document.form.YazDHCP_clients.value.length <= 5998)
+		else if (document.form.YazDHCP_clients.value.length > 2999 &&
+		         document.form.YazDHCP_clients.value.length <= 5998)
 		{
 			var yazdhcp_settings = document.form.YazDHCP_clients.value.match(/.{1,2999}/g);
 			custom_settings["yazdhcp_clients"] = yazdhcp_settings[0];
 			custom_settings["yazdhcp_clients2"] = yazdhcp_settings[1];
 		}
-		else if (document.form.YazDHCP_clients.value.length > 5998 && document.form.YazDHCP_clients.value.length <= apiMaxLength)
+		else if (document.form.YazDHCP_clients.value.length > 5998 &&
+		         document.form.YazDHCP_clients.value.length <= apiMaxLength)
 		{
 			var yazdhcp_settings = document.form.YazDHCP_clients.value.match(/.{1,2999}/g);
 			custom_settings["yazdhcp_clients"] = yazdhcp_settings[0];
@@ -2185,14 +2217,16 @@ function validForm()
 		return false;
 	}
 
-	if(!validate_dhcp_range(document.form.dhcp_start) || !validate_dhcp_range(document.form.dhcp_end)){
+	if (!validate_dhcp_range(document.form.dhcp_start) ||
+	    !validate_dhcp_range(document.form.dhcp_end))
+	{
 		return false;
 	}
 
 	var dhcp_start_num = inet_network(document.form.dhcp_start.value);
 	var dhcp_end_num = inet_network(document.form.dhcp_end.value);
-
-	if(dhcp_start_num > dhcp_end_num){
+	if (dhcp_start_num > dhcp_end_num)
+	{
 		var tmp = document.form.dhcp_start.value;
 		document.form.dhcp_start.value = document.form.dhcp_end.value;
 		document.form.dhcp_end.value = tmp;
@@ -2200,7 +2234,9 @@ function validForm()
 
 	var default_pool = [];
 	default_pool = get_default_pool(document.form.lan_ipaddr.value, document.form.lan_netmask.value);
-	if((inet_network(document.form.dhcp_start.value) < inet_network(default_pool[0])) || (inet_network(document.form.dhcp_end.value) > inet_network(default_pool[1]))){
+	if ((inet_network(document.form.dhcp_start.value) < inet_network(default_pool[0])) ||
+	    (inet_network(document.form.dhcp_end.value) > inet_network(default_pool[1])))
+	{
 		if(confirm("The new IP Pool does not match the subnet mask. Would you like to allow router to change the IP pool automatically?")){ //Acceptable DHCP ip pool : "+default_pool[0]+"~"+default_pool[1]+"\n
 			document.form.dhcp_start.value=default_pool[0];
 			document.form.dhcp_end.value=default_pool[1];
@@ -2219,7 +2255,7 @@ function validForm()
 		return false;
 	}
 
-	//Filtering ip address with leading zero
+	//Filtering IP address with leading zero//
 	document.form.dhcp_start.value = ipFilterZero(document.form.dhcp_start.value);
 	document.form.dhcp_end.value = ipFilterZero(document.form.dhcp_end.value);
 
