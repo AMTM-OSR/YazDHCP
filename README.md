@@ -2,7 +2,7 @@
 
 ## v1.2.1
 
-### Updated on 2025-Oct-20
+### Updated on 2025-Oct-24
 
 ## About
 
@@ -52,6 +52,82 @@ dhcp-optsfile=/jffs/addons/YazDHCP.d/.optionslist #YazDHCP_optionslist#
 dhcp-hostsfile contains a list of MAC-address-to-IP-address bindings to reserve a specific DHCP IP address for a MAC address.
 
 dhcp-optsfile contains a list of MAC-address-to-DNS-server-address bindings to provide the specified DNS server as a DHCP option for a MAC address.
+
+
+## DHCP IP Address Reservations for Guest Network Clients
+
+Starting with YazDHCP 1.2.0 version, a new feature was added to allow assigning DHCP IP address reservations to clients on available Guest Networks whose subnet is separate from the main LAN subnet.
+
+### DETAILS
+
+1) When YazDHCP is a fresh installation (*not* a version update), the script automatically checks if there are any DHCP IP address reservations stored in NVRAM. If found, it will prompt the user to confirm exporting all the existing reservations from NVRAM to YazDHCP internal files. This export process extracts all the relevant information to create the initial list of network clients from both the Main LAN and the Guest Networks (if any). Also, it allows users to restore the same IP address reservations to their original NVRAM state if you decide to uninstall YazDHCP at a later time.
+
+![CLI Install Export](./Images/YazDHCP_Installation_Export.jpg)
+
+2) If a current production version of YazDHCP is already installed, updating to the latest version will add an option 'x' in the SSH CLI menu to export any existing DHCP IP address reservations stored in NVRAM (if found). If this option is selected, the same export process triggered during a fresh installation will run.
+
+![CLI Menu Export Option](./Images/YazDHCP_CLI_Menu_Export_Option.jpg)
+
+3) After the export of the NVRAM DHCP information is completed, any existing IP address reservations from Guest Networks will be shown as DISABLED (i.e. red background). Also, by default, if at least one suitable Guest Network is found enabled/active, the new feature is set to DISABLED, so the original behavior and functionality continues to run as usual.
+
+![WebUI Allow IPs DISABLED](./Images/YazDHCP_WebUI_AllowGN_IPs_DISABLED.jpg)
+
+4) If at least one suitable Guest Network is found enabled/active, you will need to manually ENABLE the feature to activate all the Guest Network IP address assignments and to allow the user to input more entries. Make sure to click on the "Apply" button at the bottom of the WebUI page to make any changes permanent.
+
+![WebUI Allow IPs ENABLED_1](./Images/YazDHCP_WebUI_AllowGN_IPs_ENABLED1.jpg)
+
+5) After a Guest Network client IP address reservation is assigned, it will not be automatically removed from the WebUI page even if the feature is manually DISABLED, or if the Guest Network is DISABLED. However, the files associated with the dnsmasq instance will have the Guest Network client entries removed automatically.
+
+![WebUI Allow IPs ENABLED_2](./Images/YazDHCP_WebUI_AllowGN_IPs_ENABLED2.jpg)
+
+6) You can manually add IP address reservations for Guest Network clients as long as the target Guest Network remains enabled and active.
+
+7) When assigning a new IP address reservation, the code will check if it falls within the subnet range of an available Guest Network in addition to the main LAN subnet; otherwise, an error message is displayed.
+
+8) The menu option to toggle the new functionality will be grayed out and marked as UNAVAILABLE if there are no enabled Guest Networks whose subnet is separate from the main LAN subnet.
+
+![WebUI Allow IPs UNAVAILABLE](./Images/YazDHCP_WebUI_AllowGN_IPs_UNAVAILABLE.jpg)
+
+9) Whenever the YazDHCP WebUI page is loaded, you will see an 8-to-10 sec. "loading" delay due to the JavaScript call to the shell script requesting a check-and-validation status of each client entry, so the script executes code to validate all the existing client IP address assignments against all the Guest Networks profiles currently found enabled (or possibly disabled), to make sure that the associated virtual interfaces have been identified, and the appropriate dnsmasq directives have been issued to the correct dnsmasq instance associated with each Guest Network.
+
+
+### IMPORTANT NOTE
+
+YazDHCP will *not* export or transfer any IP address reservations found in user-supplied custom files (e.g. /jffs/configs/dnsmasq*.conf.add) into its own internal files. Only NVRAM-based DHCP settings are checked and transferred.
+
+![CLI Menu Export Note](./Images/YazDHCP_CLI_Menu_Export_Note.jpg)
+
+The reason is that, unlike the built-in NVRAM key-value pairs, the format of the dnsmasq directives found in user-supplied custom files is not fixed and consistent, so it can vary widely because the order of the parameters in the dnsmasq directive lines is essentially "free form."
+
+So if you have created such custom files, you basically have 3 choices to transfer your current IP address assignments to YazDHCP:
+
+a) Manually transfer the IP address assignments back into NVRAM by inputting them into the corresponding WebUI page for each Guest Network profile. Once this is completed, you can use the SSH CLI 'x' menu option to trigger the export process.
+
+b) Manually transfer the IP address assignments directly into the YazDHCP internal CSV-formatted client list (/jffs/addons/YazDHCP.d/DHCP_clients) by following the required format shown below:
+
+```
+MAC,IP,HOSTNAME,DNS
+```
+
+EXAMPLES:
+```
+MAC,IP,HOSTNAME,DNS
+AA:BB:CC:DD:EE:FF,192.168.50.10,,
+AB:BC:CD:DE:EF:FA,192.168.50.11,MyHostName1,
+FF:EE:DD:CC:BB:AA,192.168.50.12,MyHostName2,9.9.9.9
+```
+
+Once you have finished adding all the entries into the internal client list file, you can use the SSH CLI '1' menu option to process the newly-modified list.
+
+![CLI Menu Process Option](./Images/YazDHCP_CLI_Menu_Process_Option.jpg)
+
+c) If you prefer making the above changes offline on your personal laptop using your favorite text editor, or perhaps using MS Excel, you could export to CSV your current client list using the WebUI:
+
+![WebUI Export to CSV](./Images/YazDHCP_WebUI_ExportToCSV.jpg)
+
+Then manually add your IP address reservations to the CSV file. After you have finished making all the changes and additions, you can then import the modified file back into YazDHCP using the WebUI page. Once you're satisfied with all your changes, make sure to click on the "Apply" button to make them persistent.
+
+Also, it's very important to make sure you *remove* all IP address reservations from your custom files that have been transferred to YazDHCP to prevent dnsmasq from getting duplicate entries/directives, which is bound to cause some issues when restarting the dnsmasq process.
 
 ## "DHCP Lease" time values
 
