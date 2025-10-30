@@ -50,15 +50,13 @@ thead.collapsible-jquery {
 <script language="JavaScript" type="text/javascript" src="/popup.js"></script>
 <script language="JavaScript" type="text/javascript" src="/help.js"></script>
 <script language="JavaScript" type="text/javascript" src="/ext/shared-jy/detect.js"></script>
-<script language="JavaScript" type="text/javascript" src="/tmhist.js"></script>
-<script language="JavaScript" type="text/javascript" src="/tmmenu.js"></script>
 <script language="JavaScript" type="text/javascript" src="/client_function.js"></script>
 <script language="JavaScript" type="text/javascript" src="/validator.js"></script>
 <script language="JavaScript" type="text/javascript" src="/base64.js"></script>
 <script>
 
 /**----------------------------------------**/
-/** Modified by Martinski W. [2025-Oct-18] **/
+/** Modified by Martinski W. [2025-Oct-27] **/
 /**----------------------------------------**/
 
 const actionScriptPrefix = "start_YazDHCP";
