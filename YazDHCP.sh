@@ -13,7 +13,7 @@
 ##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2025-Oct-24
+# Last Modified: 2025-Nov-02
 #---------------------------------------------------------
 
 #############################################
@@ -29,9 +29,9 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
-readonly SCRIPT_VERSION="v1.2.1"
-readonly SCRIPT_VERSTAG="25102422"
-SCRIPT_BRANCH="master"
+readonly SCRIPT_VERSION="v1.2.2"
+readonly SCRIPT_VERSTAG="25110223"
+SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
 readonly SCRIPT_CONF="$SCRIPT_DIR/DHCP_clients"
@@ -42,7 +42,7 @@ readonly SHARED_REPO="https://raw.githubusercontent.com/AMTM-OSR/shared-jy/maste
 readonly SHARED_WEB_DIR="$SCRIPT_WEBPAGE_DIR/shared-jy"
 readonly SHARED_CUSTOM_CONFIG_NAME="custom_settings.txt"
 readonly SHARED_CUSTOM_CONFIG_FILE="/jffs/addons/$SHARED_CUSTOM_CONFIG_NAME"
-readonly SHARED_CUSTOM_CONFIG_BACKUP="${SCRIPT_DIR}/${SHARED_CUSTOM_CONFIG_NAME}.BKUP"
+readonly SHARED_CUSTOM_CONFIG_BACKUP="${SCRIPT_DIR}/${SHARED_CUSTOM_CONFIG_NAME}.BAKUP"
 
 ### End of script variables ###
 
@@ -224,7 +224,7 @@ Print_Output()
 	then prioStr="$3"
 	else prioStr="NOTICE"
 	fi
-	if [ "$1" = "true" ]
+	if [ "$1" = "true" ] || [ "$1" = "logOnly" ]
 	then
 		case "$prioStr" in
 		    "$CRIT") prioNum=2 ;;
@@ -236,9 +236,12 @@ Print_Output()
 		logMsg="$(_RemoveColorEscapeSequences_ "$2")"
 		printf "$logMsg" | logger -t "${SCRIPT_NAME}_[$$]" -p $prioNum
 	fi
-	printf "${BOLD}${3}${2}${CLRct}\n"
-	if [ $# -lt 4 ] || [ "$4" != "oneline" ]
-	then echo ; fi
+	if [ "$1" != "logOnly" ]
+	then
+		printf "${BOLD}${3}${2}${CLRct}\n"
+		if [ $# -lt 4 ] || [ "$4" != "oneline" ]
+		then echo ; fi
+	fi
 }
 
 Firmware_Version_Check()
@@ -576,20 +579,25 @@ ValidateUserIconsBackupDirectory()
    local LogTag
    if [ -z "$defaultUSBMountPoint" ] && \
       echo "$theUserIconsBackupDir" | grep -qE "^(/tmp/mnt/|/tmp/opt/|/mnt/|/opt/)"
-   then LogTag="**INFO**: "
+   then LogTag="*INFO*: "
    else LogTag="**ERROR**: "
    fi
 
-   Print_Output true "$LogTag Backup directory [$theUserIconsBackupDir] NOT FOUND." "$ERR"
-   Print_Output true "Trying again with directory [$1]" "$PASS"
+   if CheckForUserIconFilesFound || \
+      [ "$(GetFromCustomUserIconsConfig SAVED)" != "NONE" ]
+   then
+       Print_Output true "$LogTag Backup directory [$theUserIconsBackupDir] *NOT* found." "$ERR"
+       Print_Output true "Trying again with directory [$1]" "$PASS"
+   fi
+
    theUserIconsBackupDir="$1"
    switchBackupDir=true
    return 1
 }
 
-##----------------------------------------------##
-## Added/Modified by Martinski W. [2024-Jan-08] ##
-##----------------------------------------------##
+##----------------------------------------##
+## Modified by Martinski W. [2024-Jan-08] ##
+##----------------------------------------##
 GetUserIconsSavedVars()
 {
    switchBackupDir=false
@@ -613,14 +621,16 @@ GetUserIconsSavedVars()
    mkdir -m 755 "$theUserIconsBackupDir" 2>/dev/null
    if [ ! -d "$theUserIconsBackupDir" ]
    then
-       Print_Output true "**ERROR**: Backup directory [$theUserIconsBackupDir] NOT FOUND." "$ERR"
+       Print_Output true "**ERROR**: Backup directory [$theUserIconsBackupDir] *NOT* found." "$ERR"
        return 1
    fi
 
-   if "$switchBackupDir"
+   if "$switchBackupDir" && \
+      { CheckForUserIconFilesFound || \
+        [ "$(GetFromCustomUserIconsConfig SAVED)" != "NONE" ] ; }
    then
        if "$inStartupMode"
-       then LogMsg="*WARNING*: Temporary Backup directory [$theUserIconsBackupDir]"
+       then LogMsg="*INFO*: Temporary Backup directory [$theUserIconsBackupDir]"
        else LogMsg="*WARNING*: Alternative Backup directory [$theUserIconsBackupDir]"
        fi
        Print_Output true "$LogMsg" "$WARN"
@@ -665,7 +675,8 @@ Check_CustomUserIconsConfig()
 ##-------------------------------------##
 BackUpConfigSettings()
 {
-	if [ -f "$SHARED_CUSTOM_CONFIG_FILE" ]
+	if [ -f "$SHARED_CUSTOM_CONFIG_FILE" ] && \
+	   ! grep -qE "^yazdhcp_clients " "$SHARED_CUSTOM_CONFIG_FILE"
 	then
 		cp -fp "$SHARED_CUSTOM_CONFIG_FILE" "$SHARED_CUSTOM_CONFIG_BACKUP"
 	fi
@@ -1029,7 +1040,7 @@ _CheckForWirelessRadioEnabled_()
 
     if [ -z "$wifiIFnameList" ]
     then
-        printf "\nWiFi Interface List *NOT* found.\n"
+        Print_Output true "Wireless Interface List *NOT* found." "$ERR"
         return 1
     fi
     for wifiIFname in $wifiIFnameList
@@ -1041,7 +1052,10 @@ _CheckForWirelessRadioEnabled_()
             break
         fi
     done
-    "$wifiRadioEnabled" && return 0 || return 1
+    "$wifiRadioEnabled" && return 0
+
+    Print_Output true "Wireless Radios are *NOT* enabled." "$WARN"
+    return 1
 }
 
 ##-------------------------------------##
@@ -1057,7 +1071,9 @@ _Get_ActiveGuestNetwork_VirtualInterfaces_()
 
     if ! _CheckForWirelessRadioEnabled_ && \
        [ "${#gnInfoStr1}" -eq 0 ] && [ "${#gnInfoStr2}" -eq 0 ]
-    then return 1
+    then
+        Print_Output true "Guest Network Interfaces *NOT* found." "$ERR"
+        return 1
     fi
 
     gnInfoNum1="$(echo "$gnInfoStr1" | wc -l)"
@@ -1071,7 +1087,10 @@ _Get_ActiveGuestNetwork_VirtualInterfaces_()
     else
         gnListOfIFaces="$(echo "$gnInfoStr2" | awk -F' ' '{print $3}')"
     fi
-    [ -n "$gnListOfIFaces" ] && return 0 || return 1
+    [ -n "$gnListOfIFaces" ] && return 0
+
+    Print_Output logOnly "List of Guest Network Interfaces is EMPTY." "$ERR"
+    return 1
 }
 
 ##-------------------------------------##
@@ -2179,10 +2198,24 @@ _NVRAM_IconsRestoreKeyValue_()
    return 1
 }
 
-CheckForCustomIconFiles()
+##-------------------------------------##
+## Added by Martinski W. [2025-Oct-31] ##
+##-------------------------------------##
+CheckForUserIconFilesFound()
 {
    if [ -d "$userIconsDIRpath" ] && \
       [ "$(ls -1 ${userIconsDIRpath}/*.log 2>/dev/null | wc -l)" -gt 0 ]
+   then return 0
+   else return 1
+   fi
+}
+
+##----------------------------------------##
+## Modified by Martinski W. [2023-Oct-31] ##
+##----------------------------------------##
+CheckForCustomIconFiles()
+{
+   if CheckForUserIconFilesFound
    then
        iconsFound=true
        UpdateCustomUserIconsConfig FOUND TRUE
@@ -2194,9 +2227,9 @@ CheckForCustomIconFiles()
    fi
 }
 
-##----------------------------------------------##
-## Added/Modified by Martinski W. [2023-Jun-04] ##
-##----------------------------------------------##
+##----------------------------------------##
+## Modified by Martinski W. [2023-Jun-04] ##
+##----------------------------------------##
 CheckForSavedIconFiles()
 {
    theFileCount="$(_list2_ -1 "$theBackupFilesMatch" 2>/dev/null | wc -l)"
@@ -2207,7 +2240,6 @@ CheckForSavedIconFiles()
        UpdateCustomUserIconsConfig RESTD NONE
        return 1
    fi
-
    backupsFound=true  theBackupFile=""
 
    if [ $# -gt 0 ] && [ -n "$1" ] && "$1"
@@ -4181,6 +4213,7 @@ _Check_ActiveGuestNetwork_SubnetInfo_()
 {
    local gnListOfIFaces=""  gnIFaceName  gnInfoStr1  gnInfoStr2
    local gnSubnetCIDR  gnSubnetMask  gnStartIPadd  gnIFaceCount
+   local sleepSecs=20
 
    _Update_GuestNetCheck_Status_ InProgress
 
@@ -4188,7 +4221,17 @@ _Check_ActiveGuestNetwork_SubnetInfo_()
    if [ -z "$gnListOfIFaces" ]
    then
        _Init_ActiveGuestNetwork_SubnetInfo_
-       _AllowGuestNetwork_IP_Reservations_ reset false
+       if "$inStartupMode"
+       then  ## Try again after initial startup ##
+           if [ -s /jffs/scripts/YazFi ]
+           then sleepSecs=45
+           elif [ "$fwInstalledBaseVers" -lt 3006 ]
+           then sleepSecs=30
+           fi
+           ( sleep "$sleepSecs" ; _Check_ActiveGuestNetwork_SubnetInfo_ ) &
+       else
+           _AllowGuestNetwork_IP_Reservations_ reset false
+       fi
        _Update_GuestNetCheck_Status_ DONE
        return 1
    fi
@@ -4210,7 +4253,7 @@ _Check_ActiveGuestNetwork_SubnetInfo_()
        gnInfoStr2="$(ip route show | grep -E "dev[[:blank:]]* ${gnIFaceName}[[:blank:]]* proto kernel")"
        if [ "${#gnInfoStr1}" -eq 0 ] || [ "${#gnInfoStr2}" -eq 0 ]
        then
-           Print_Output true "Guest Network Interface [$gnIFaceName] was NOT found." "$ERR"
+           Print_Output true "Guest Network Interface [$gnIFaceName] was *NOT* found." "$ERR"
            continue
        fi
        gnSubnetCIDR="$(echo "$gnInfoStr2" | awk -F' ' '{print $1}')"
@@ -4219,7 +4262,7 @@ _Check_ActiveGuestNetwork_SubnetInfo_()
 
        if [ -z "$gnSubnetCIDR" ] || [ -z "$gnSubnetMask" ] || [ -z "$gnStartIPadd" ]
        then
-           Print_Output true "Guest Network Interface [$gnIFaceName] info NOT found." "$ERR"
+           Print_Output true "Guest Network Interface [$gnIFaceName] info *NOT* found." "$ERR"
            continue
        fi
        if ! _Add_GuestNetwork_SubnetInfo_
@@ -4244,12 +4287,14 @@ _Check_ActiveGuestNetwork_SubnetInfo_()
        printf ' [];\n' >> "$guestNetInfoJSfilePath"
        _Set_FoundActiveGuestNetworks_ false
        _AllowGuestNetwork_IP_Reservations_ reset false
+       Print_Output logOnly "Active Guest Network Interfaces *NOT* found." "$ERR"
    else
        printf '\n];\n' >> "$guestNetInfoJSfilePath"
        if ! "$(_Is_DHCP_Static_IPs_Enabled_)" || \
           ! "$(_AllowGuestNetwork_IP_Reservations_ check)"
        then
            _AllowGuestNetwork_IP_Reservations_ disable false
+          Print_Output logOnly "Guest Network IP Address Reservations *NOT* allowed." "$ERR"
        fi
    fi
    _Update_GuestNetCheck_Status_ DONE
@@ -4548,11 +4593,12 @@ NTP_Ready()
 ##----------------------------------------##
 Menu_Startup()
 {
+	Print_Output true "$SCRIPT_NAME $SCRIPT_VERSION starting up" "$PASS"
 	NTP_Ready
 	Check_Lock
 
 	if [ $# -eq 0 ] || [ "$1" != "force" ]
-	then sleep 5
+	then sleep 15
 	fi
 	inStartupMode=true
 	Create_Dirs
@@ -4818,7 +4864,7 @@ case "$1" in
 				"${SCRIPT_NAME}doupdate")
 					Update_Version force unattended
 				;;
-				"${SCRIPT_NAME}checkIcons")
+				"${SCRIPT_NAME}checkUserIcons")
 					CheckUserIconFiles
 				;;
 				"${SCRIPT_NAME}backupIcons")
@@ -4830,15 +4876,15 @@ case "$1" in
 				"${SCRIPT_NAME}restoreIcons_reqNum_"*)
 					RestoreUserIconFilesReq "$3"
 				;;
-				"${SCRIPT_NAME}checkGuestNetReservations")
+				"${SCRIPT_NAME}checkGNetReservations")
 					_Update_GuestNetCheck_Status_ INIT
 					_Check_ActiveGuestNetwork_SubnetInfo_
 					Process_DHCP_Clients
 				;;
-				"${SCRIPT_NAME}enableGuestNetReservations")
+				"${SCRIPT_NAME}enableGNetReservations")
 					_AllowGuestNetwork_IP_Reservations_ enable
 				;;
-				"${SCRIPT_NAME}disableGuestNetReservations")
+				"${SCRIPT_NAME}disableGNetReservations")
 					_AllowGuestNetwork_IP_Reservations_ disable
 				;;
 			esac

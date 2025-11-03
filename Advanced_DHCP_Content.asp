@@ -50,15 +50,13 @@ thead.collapsible-jquery {
 <script language="JavaScript" type="text/javascript" src="/popup.js"></script>
 <script language="JavaScript" type="text/javascript" src="/help.js"></script>
 <script language="JavaScript" type="text/javascript" src="/ext/shared-jy/detect.js"></script>
-<script language="JavaScript" type="text/javascript" src="/tmhist.js"></script>
-<script language="JavaScript" type="text/javascript" src="/tmmenu.js"></script>
 <script language="JavaScript" type="text/javascript" src="/client_function.js"></script>
 <script language="JavaScript" type="text/javascript" src="/validator.js"></script>
 <script language="JavaScript" type="text/javascript" src="/base64.js"></script>
 <script>
 
 /**----------------------------------------**/
-/** Modified by Martinski W. [2025-Oct-18] **/
+/** Modified by Martinski W. [2025-Nov-01] **/
 /**----------------------------------------**/
 
 const actionScriptPrefix = "start_YazDHCP";
@@ -733,7 +731,7 @@ function FileSelectionHandler (fileSelDialog)
            let actionScriptVal = actionScriptPrefix + 'restoreIcons_reqNum_' + theFileIndex;
            document.formScriptActions.action_script.value = actionScriptVal;
            document.formScriptActions.submit();
-           setTimeout(GetCustomUserIconsStatus, 3000);
+           setTimeout(GetCustomUserIconsStatus, 5000);
        }
        else
        {
@@ -982,6 +980,9 @@ function GetCustomUserIconsStatus()
 	});
 }
 
+/**----------------------------------------**/
+/** Modified by Martinski W. [2025-Nov-01] **/
+/**----------------------------------------**/
 function GetCustomUserIconsConfig()
 {
 	$.ajax({
@@ -989,12 +990,6 @@ function GetCustomUserIconsConfig()
 		dataType: 'text',
 		error: function(xhr)
 		{
-			if (customUserIcons.initState)
-			{
-				customUserIcons.initState = false;
-				CheckUserIconFiles();
-				return false;
-			}
 			if (customUserIcons.numTries < customUserIcons.maxTries)
 			{
 				customUserIcons.numTries += 1;
@@ -1011,13 +1006,6 @@ function GetCustomUserIconsConfig()
 		},
 		success: function(data)
 		{
-			if (customUserIcons.initState)
-			{
-				customUserIcons.initState = false;
-				CheckUserIconFiles();
-				return false;
-			}
-
 			var settings = data.split('\n');
 			settings = settings.filter(Boolean);
 			let linesCount = settings.length;
@@ -1083,7 +1071,7 @@ function BackUpUserIconFiles()
 	let actionScriptVal = actionScriptPrefix + 'backupIcons';
 	document.formScriptActions.action_script.value = actionScriptVal;
 	document.formScriptActions.submit();
-	setTimeout(GetCustomUserIconsStatus, 3000);
+	setTimeout(GetCustomUserIconsStatus, 5000);
 }
 
 function RestoreUserIconFiles()
@@ -1096,15 +1084,7 @@ function RestoreUserIconFiles()
 	let actionScriptVal = actionScriptPrefix + 'restoreIcons_reqList';
 	document.formScriptActions.action_script.value = actionScriptVal;
 	document.formScriptActions.submit();
-	setTimeout(GetCustomUserIconsBackupList, 3000);
-}
-
-function CheckUserIconFiles()
-{
-	let actionScriptVal = actionScriptPrefix + 'checkIcons';
-	document.formScriptActions.action_script.value = actionScriptVal;
-	document.formScriptActions.submit();
-	setTimeout(GetCustomUserIconsConfig, 1000);
+	setTimeout(GetCustomUserIconsBackupList, 5000);
 }
 
 /**-------------------------------------**/
@@ -1231,12 +1211,12 @@ function AllowGuestNetworkReservations(forminput)
 	if (inputvalue === 'true')
 	{
 		SetAllowGuestNetReservationsStatus ('ENABLED');
-		actionScriptVal = actionScriptPrefix + 'enableGuestNetReservations';
+		actionScriptVal = actionScriptPrefix + 'enableGNetReservations';
 	}
 	else if (inputvalue === 'false')
 	{
 		SetAllowGuestNetReservationsStatus ('DISABLED');
-		actionScriptVal = actionScriptPrefix + 'disableGuestNetReservations';
+		actionScriptVal = actionScriptPrefix + 'disableGNetReservations';
 	}
 
 	document.formScriptActions.action_script.value = actionScriptVal;
@@ -1292,16 +1272,24 @@ function SetAllowGuestNetReservationsStatus(theStatus)
 }
 
 /**-------------------------------------**/
-/** Added by Martinski W. [2025-Sep-05] **/
+/** Added by Martinski W. [2025-Nov-01] **/
 /**-------------------------------------**/
-function Check_GuestNetwork_SubnetInfo()
+function SendMultipleCheckRequests()
 {
 	if (isInitialLoading)
 	{ SetAllowGuestNetReservationsStatus ('LOADING'); }
 
-	let actionScriptVal = actionScriptPrefix + 'checkGuestNetReservations';
-	document.formScriptActions.action_script.value = actionScriptVal;
+	if (customUserIcons.initState)
+	{ customUserIcons.initState = false; }
+
+	let actionScript1 = actionScriptPrefix + 'checkUserIcons';
+	let actionScript2 = actionScriptPrefix + 'checkGNetReservations';
+	let actionScripts = actionScript1 + ' ; ' + actionScript2;
+
+	document.formScriptActions.action_script.value = actionScripts;
 	document.formScriptActions.submit();
+
+	setTimeout(GetCustomUserIconsConfig, 6000);
 	setTimeout(StartGuestNetCheckInterval, 8000);
 }
 
@@ -1353,7 +1341,7 @@ vpn_fusion_support = false;
 var faq_href = "https://nw-dlcdnet.asus.com/support/forward.html?model=&type=Faq&lang="+ui_lang+"&kw=&num=101";
 
 /**----------------------------------------**/
-/** Modified by Martinski W. [2025-Sep-05] **/
+/** Modified by Martinski W. [2025-Nov-01] **/
 /**----------------------------------------**/
 function initial()
 {
@@ -1363,11 +1351,10 @@ function initial()
 
 	isInitialLoading = true;
 	LoadCustomSettings();
-	Get_DHCP_LeaseConfig();
-	GetCustomUserIconsConfig();
 	ScriptUpdateLayout();
 	AddEventHandlers();
-	Check_GuestNetwork_SubnetInfo();
+	Get_DHCP_LeaseConfig();
+	SendMultipleCheckRequests();
 
 	d3.csv("/ext/YazDHCP/DHCP_clients.htm").then(function(data){
 		if (data.length > 0)
