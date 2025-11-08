@@ -2,7 +2,7 @@
 
 ## v1.2.3
 
-### Updated on 2025-Nov-04
+### Updated on 2025-Nov-07
 
 ## About
 
@@ -56,11 +56,11 @@ dhcp-optsfile=/jffs/addons/YazDHCP.d/.optionslist #YazDHCP_optionslist#
 
 ## DHCP IP Address Reservations for Guest Network Clients
 
-Starting with YazDHCP 1.2.0 version, a new feature was added to allow assigning DHCP IP address reservations to clients on available Guest Networks whose subnet is separate from the main LAN subnet.
+Starting with YazDHCP 1.2.0 version, a new feature was added to allow assigning DHCP IP address reservations to clients on available Guest Networks whose subnet is **separate** from the main LAN subnet.
 
 ### DETAILS
 
-1) When YazDHCP is a fresh installation (***not*** a version update), the script automatically checks if there are any DHCP IP address reservations stored in **NVRAM**. If found, it will prompt the user to confirm exporting all the existing reservations from NVRAM to YazDHCP internal files. This export process extracts all the relevant information to create the initial list of network clients from both the Main LAN and the Guest Networks (if any). Also, it allows users to restore the same IP address reservations to their original NVRAM state if you decide to uninstall YazDHCP at a later time.
+1) When YazDHCP is a fresh installation (***not*** a version update), the script automatically checks if there are any DHCP IP address reservations stored in **NVRAM**. If found, it will prompt the user to confirm exporting all the existing reservations from NVRAM to YazDHCP internal files. This export process extracts all the relevant information to create the initial list of network clients from both the Main LAN and any suitable Guest Networks. Also, it allows users to restore the same IP address reservations to their original NVRAM state if you decide to uninstall YazDHCP at a later time.
 
 ![CLI Install Export](./Images/YazDHCP_Installation_Export.jpg)
 
@@ -68,7 +68,7 @@ Starting with YazDHCP 1.2.0 version, a new feature was added to allow assigning 
 
 ![CLI Menu Export Option](./Images/YazDHCP_CLI_Menu_Export_Option.jpg)
 
-3) After the export of the **NVRAM** DHCP information is completed, any existing IP address reservations from Guest Networks will be shown as **DISABLED** (i.e. red background). Also, by default, if at least one suitable Guest Network is found enabled/active, the new feature is set to **DISABLED**, so the original behavior and functionality continue to run as usual.
+3) After the export of the **NVRAM** DHCP information is completed, any existing IP address reservations from suitable Guest Networks will be shown as **DISABLED** (i.e. red background). Also, by default, if at least one suitable Guest Network is found enabled/active, the new feature is set to **DISABLED**, so the original behavior and functionality continue to run as usual.
 
 ![WebUI Allow IPs DISABLED](./Images/YazDHCP_WebUI_AllowGN_IPs_DISABLED.jpg)
 
