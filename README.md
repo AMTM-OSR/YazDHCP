@@ -91,7 +91,7 @@ Starting with YazDHCP 1.2.0 version, a new feature was added to allow assigning 
 9) Whenever the YazDHCP WebUI page is loaded, you will see an 8-to-10 sec. "loading" delay due to the JavaScript call to the shell script requesting a check-and-validation status of each client entry, so the script executes code to validate all the existing client IP address assignments against all the Guest Networks profiles currently found enabled (or possibly disabled), to make sure that the associated virtual interfaces have been identified, and the appropriate dnsmasq directives have been issued to the correct dnsmasq instance associated with each Guest Network.
 
 
-### IMPORTANT NOTE
+### IMPORTANT NOTES
 
 YazDHCP will ***not*** export or transfer any IP address reservations found in user-supplied custom files (e.g. /jffs/configs/dnsmasq*.conf.add) into its own internal files. Only NVRAM-based DHCP settings are checked and transferred.
 
@@ -128,6 +128,16 @@ c) If you prefer making the above changes offline on your personal laptop using 
 Then manually add your IP address reservations to the CSV file. After you have finished making all the changes and additions, you can then import the modified file back into YazDHCP using the WebUI page. Once you're satisfied with all your changes, make sure to click on the "**Apply**" button to make them persistent.
 
 Also, it's very important to make sure you ***remove*** all IP address reservations from your custom files that have been transferred to YazDHCP to prevent dnsmasq from getting duplicate entries/directives, which is bound to cause some issues when restarting the dnsmasq process.
+
+Equally important, make sure to click on the "Apply" button from the YazDHCP webpage whenever any changes occurred, including but not limited to:
+
+- Any Guest Network is enabled or disabled, regardless of the subnet range being separate/different from the Main LAN.
+- Any DHCP IP address assignment is manually added, modified, or removed from the list.
+- Any CSV file containing IP address assignments is imported, even if the list has not changed.
+- Any time a DHCP IP address assignment appears to be ignored or not honored by dnsmasq.
+
+This is to make all changes are synchronized with and reflected on YazDHCP internal files, and dnsmasq is restarted.
+
 
 ## "DHCP Lease" time values
 
