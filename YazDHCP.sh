@@ -13,7 +13,7 @@
 ##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2025-Nov-04
+# Last Modified: 2025-Nov-07
 #---------------------------------------------------------
 
 #############################################
@@ -30,7 +30,7 @@
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
 readonly SCRIPT_VERSION="v1.2.3"
-readonly SCRIPT_VERSTAG="25110400"
+readonly SCRIPT_VERSTAG="25110720"
 SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
@@ -1750,7 +1750,7 @@ _CleanUp_DNSMasqConfigFiles_()
     if [ "$fwInstalledBaseVers" -lt 3006 ]
     then return
     fi
-    local gnInfoStr  gnListOfIFaces  gnIFaceName
+    local gnInfoStr  gnListOfIFaces=""  gnIFaceName
     local staticAddRegExp  optionAddRegExp  configAddPrefix
     local confAddFBKUP  configFName  configAddFile
 
@@ -1788,12 +1788,9 @@ _CleanUp_DNSMasqConfigFiles_()
     done
 
     gnInfoStr="$(_Get_GuestNetwork_SubnetInfo_)"
-    if [ "${#gnInfoStr}" -eq 0 ]
-    then return 1
-    fi
-    gnListOfIFaces="$(echo "$gnInfoStr" | cut -d'=' -f1 | cut -d'_' -f2)"
-    if [ -z "$gnListOfIFaces" ]
-    then return 1
+    if [ "${#gnInfoStr}" -gt 0 ]
+    then
+        gnListOfIFaces="$(echo "$gnInfoStr" | cut -d'=' -f1 | cut -d'_' -f2)"
     fi
 
     for configFPATH in $(ls -1 /etc/dnsmasq-*.conf 2>/dev/null)
@@ -1812,13 +1809,16 @@ _CleanUp_DNSMasqConfigFiles_()
             continue
         fi
         isConfigAddFileOK=false
-        for gnIFaceName in $gnListOfIFaces
-        do
-            if grep -qE "^($staticAddRegExp|$optionAddRegExp)$gnIFaceName #" "$configAddFile"
-            then
-                isConfigAddFileOK=true ; break
-            fi
-        done
+        if [ -n "$gnListOfIFaces" ]
+        then
+            for gnIFaceName in $gnListOfIFaces
+            do
+                if grep -qE "^($staticAddRegExp|$optionAddRegExp)$gnIFaceName #" "$configAddFile"
+                then
+                    isConfigAddFileOK=true ; break
+                fi
+            done
+        fi
         "$isConfigAddFileOK" && continue
         ## Remove unused YazDHCP custom lines ##
         sed -i "\\~^${staticAddRegExp}.*~d" "$configFPATH"
@@ -1828,7 +1828,7 @@ _CleanUp_DNSMasqConfigFiles_()
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2025-Sep-14] ##
+## Modified by Martinski W. [2025-Nov-07] ##
 ##----------------------------------------##
 Auto_DNSMASQ()
 {
@@ -1913,15 +1913,19 @@ Auto_DNSMASQ()
 		return 0
 	fi
 
+	_SetUp_DNSMasqConfigAddFiles_
+
 	gnInfoStr="$(_Get_GuestNetwork_SubnetInfo_)"
 	if [ "${#gnInfoStr}" -eq 0 ]
 	then
+		_CleanUp_DNSMasqConfigFiles_
 		_Restart_DNSMASQ_
 		return 0
 	fi
 	gnListOfIFaces="$(echo "$gnInfoStr" | cut -d'=' -f1 | cut -d'_' -f2)"
 	if [ -z "$gnListOfIFaces" ]
 	then
+		_CleanUp_DNSMasqConfigFiles_
 		_Restart_DNSMASQ_
 		return 0
 	fi
@@ -1938,8 +1942,6 @@ Auto_DNSMASQ()
 	#----------------#
 	# Guest Networks #
 	#----------------#
-	_SetUp_DNSMasqConfigAddFiles_
-
 	for gnIFaceName in $gnListOfIFaces
 	do
 		ADDN_HostsFilePath="$SCRIPT_DIR/.hostnames_$gnIFaceName"
@@ -4854,7 +4856,7 @@ case "$1" in
 		if [ "$2" = "restart" ] && [ "$3" = "wireless" ]
 		then
 			NTP_Ready
-			sleepSecs=20
+			sleepSecs=30
 			if [ -s /jffs/scripts/YazFi ]
 			then sleepSecs=60
 			elif [ "$fwInstalledBaseVers" -lt 3006 ]
