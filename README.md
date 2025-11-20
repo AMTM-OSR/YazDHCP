@@ -42,12 +42,15 @@ If you do not have Entware installed, you will need to use the full path:
 
 ## Changes made to dnsmasq configuration
 
-YazDHCP adds 2 lines to dnsmasq.conf.add to configure DHCP IP address reservations:
+YazDHCP adds up to 3 lines to **/jffs/configs/dnsmasq.conf.add** file to configure DHCP IP address reservations:
 
 ```sh
+addn-hosts=/jffs/addons/YazDHCP.d/.hostnames #YazDHCP_hostnames#
 dhcp-hostsfile=/jffs/addons/YazDHCP.d/.staticlist #YazDHCP_staticlist#
 dhcp-optsfile=/jffs/addons/YazDHCP.d/.optionslist #YazDHCP_optionslist#
 ```
+
+**addn-hosts** contains a list of IP-address-to-Hostname mappings for DNS resolution of the specified clients. This is particularly useful for a network client whose IP address has been statically assigned on the device itself, not via a DHCP lease.
 
 **dhcp-hostsfile** contains a list of MAC-address-to-IP-address bindings to reserve a specific DHCP IP address for a MAC address.
 
