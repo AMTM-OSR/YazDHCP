@@ -13,7 +13,7 @@
 ##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2025-Nov-14
+# Last Modified: 2025-Nov-19
 #---------------------------------------------------------
 
 #############################################
@@ -30,7 +30,7 @@
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
 readonly SCRIPT_VERSION="v1.2.4"
-readonly SCRIPT_VERSTAG="25111400"
+readonly SCRIPT_VERSTAG="25111923"
 SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
@@ -1294,15 +1294,14 @@ _AllowGuestNetwork_IP_Reservations_()
 ##-------------------------------------##
 _Get_DHCP_NetworkTagStr_()
 {
-    if [ $# -eq 0 ] || [ -z "$1" ]
-    then echo ; return 1
+    if [ $# -lt 2 ] || [ -z "$1" ] || [ -z "$2" ]
+    then return 1
     fi
     local dnsmasqFileStr="/etc/dnsmasq.conf"
-    local dhcpOptionStr  dhcpRangeStr  dhcpNoIFaceID
-    local theIPaddr3  ipAddr3str  ipAddr4str  ifaceNameStr
+    local dhcpOptionStr1  dhcpOptionStr2  dhcpRangeStr1  dhcpRangeStr2
+    local theIPaddr3  ipAddr3str  ipAddr4str  ifaceNameStr  dhcpNoIFaceID
 
-    if [ "$fwInstalledBaseVers" -ge 3006 ] && \
-       { [ $# -lt 2 ] || [ "$2" != "MainLAN" ] ; }
+    if [ "$fwInstalledBaseVers" -ge 3006 ] && [ "$2" != "MainLAN" ]
     then dnsmasqFileStr="/etc/dnsmasq*.conf"
     fi
     dnsmasqIndxNum=""
@@ -1311,33 +1310,55 @@ _Get_DHCP_NetworkTagStr_()
     ipAddr4str="$(_EscapeChars_ "$1")"
     theIPaddr3="$(echo "$1" | cut -d'.' -f1-3)"
     ipAddr3str="$(_EscapeChars_ "$theIPaddr3")"
-    ifaceNameStr="$(_EscapeChars_ "$2")"
+    ifaceNameStr="$([ "$2" = "MainLAN" ] && echo "lan" || _EscapeChars_ "$2")"
 
     for dnsmasqFile in $(ls -1 $dnsmasqFileStr 2>/dev/null)
     do
-        dhcpRangeStr="$(grep -E "^dhcp-range=.*,${ipAddr3str}[.].*," "$dnsmasqFile")"
-        dhcpOptionStr="$(grep -E "^dhcp-option=.*,(3|option:router),${ipAddr4str}([,].*)?$" "$dnsmasqFile")"
         dhcpNoIFaceID="$(grep -E "^no-dhcp-interface=$ifaceNameStr" "$dnsmasqFile")"
-        if [ -z "$dhcpOptionStr" ] && [ -z "$dhcpRangeStr" ] && [ -z "$dhcpNoIFaceID" ]
+        dhcpRangeStr1="$(grep -E "^dhcp-range=.*,${ipAddr3str}[.].*," "$dnsmasqFile")"
+        dhcpRangeStr2="$(grep -E "^dhcp-range=(set:)?${ifaceNameStr},${ipAddr3str}[.].*," "$dnsmasqFile")"
+        dhcpOptionStr1="$(grep -E "^dhcp-option=.*,(3|option:router),${ipAddr4str}([,].*)?$" "$dnsmasqFile")"
+        dhcpOptionStr2="$(grep -E "^dhcp-option=(tag:)?${ifaceNameStr},(3|option:router),${ipAddr4str}([,].*)?$" "$dnsmasqFile")"
+
+        if [ -z "$dhcpNoIFaceID" ] && \
+           [ -z "$dhcpOptionStr1" ] && [ -z "$dhcpRangeStr1" ] && \
+           [ -z "$dhcpOptionStr2" ] && [ -z "$dhcpRangeStr2" ]
         then continue
         fi
-        if [ -n "$dhcpOptionStr" ]
+        if [ -n "$dhcpOptionStr2" ]
         then
-            dhcpNetwkTagID="$(echo "$dhcpOptionStr" | cut -d'=' -f2 | cut -d',' -f1)"
+            dhcpNetwkTagID="$(echo "$dhcpOptionStr2" | cut -d'=' -f2 | cut -d',' -f1)"
             if echo "$dhcpNetwkTagID" | grep -qE "^tag:.*"
             then
                 dhcpNetwkTagID="$(echo "$dhcpNetwkTagID" | cut -d':' -f2)"
             fi
         fi
-        if [ -z "$dhcpNetwkTagID" ] && [ -n "$dhcpRangeStr" ]
+        if [ -z "$dhcpNetwkTagID" ] && [ -n "$dhcpOptionStr1" ]
         then
-            dhcpNetwkTagID="$(echo "$dhcpRangeStr" | cut -d'=' -f2 | cut -d',' -f1)"
+            dhcpNetwkTagID="$(echo "$dhcpOptionStr1" | cut -d'=' -f2 | cut -d',' -f1)"
+            if echo "$dhcpNetwkTagID" | grep -qE "^tag:.*"
+            then
+                dhcpNetwkTagID="$(echo "$dhcpNetwkTagID" | cut -d':' -f2)"
+            fi
+        fi
+        if [ -z "$dhcpNetwkTagID" ] && [ -n "$dhcpRangeStr2" ]
+        then
+            dhcpNetwkTagID="$(echo "$dhcpRangeStr2" | cut -d'=' -f2 | cut -d',' -f1)"
             if echo "$dhcpNetwkTagID" | grep -qE "^set:.*"
             then
                 dhcpNetwkTagID="$(echo "$dhcpNetwkTagID" | cut -d':' -f2)"
             fi
         fi
-        if echo "$dnsmasqFile" | grep -qE '/etc/dnsmasq-[1-9][0-9]?.conf'
+        if [ -z "$dhcpNetwkTagID" ] && [ -n "$dhcpRangeStr1" ]
+        then
+            dhcpNetwkTagID="$(echo "$dhcpRangeStr1" | cut -d'=' -f2 | cut -d',' -f1)"
+            if echo "$dhcpNetwkTagID" | grep -qE "^set:.*"
+            then
+                dhcpNetwkTagID="$(echo "$dhcpNetwkTagID" | cut -d':' -f2)"
+            fi
+        fi
+        if [ -n "$dhcpNetwkTagID" ] && \
+           echo "$dnsmasqFile" | grep -qE '/etc/dnsmasq-[1-9][0-9]?.conf'
         then
             dnsmasqIndxNum="$(echo "$dnsmasqFile" | cut -d'-' -f2 | cut -d'.' -f1)"
         fi
@@ -3684,7 +3705,7 @@ Update_StaticList_MainLAN()
 	local hostNameEntry  dhcpNetwkTagID  dhcpNetTagStr  theIPaddr3
 	local LAN_IPaddr3="$(echo "$mainLAN_IPaddr" | cut -d'.' -f1-3)"
 
-	_Get_DHCP_NetworkTagStr_ "$mainLAN_IPaddr" MainLAN
+	_Get_DHCP_NetworkTagStr_ "$mainLAN_IPaddr" "MainLAN"
 
 	while IFS=',' read -r theMACaddr theIPaddr4 theHostName theDNSaddr
 	do
@@ -3879,7 +3900,7 @@ Update_OptionsList_MainLAN()
 	local dhcpNetwkTagID  dhcpNetTagStr  theIPaddr3
 	local LAN_IPaddr3="$(echo "$mainLAN_IPaddr" | cut -d'.' -f1-3)"
 
-	_Get_DHCP_NetworkTagStr_ "$mainLAN_IPaddr" MainLAN
+	_Get_DHCP_NetworkTagStr_ "$mainLAN_IPaddr" "MainLAN"
 
 	while IFS=',' read -r theMACaddr theIPaddr4 theHostName theDNSaddr
 	do
