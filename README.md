@@ -2,7 +2,7 @@
 
 ## v1.2.4
 
-### Updated on 2025-Nov-14
+### Updated on 2025-Nov-20
 
 ## About
 
