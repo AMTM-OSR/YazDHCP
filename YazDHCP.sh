@@ -13,7 +13,7 @@
 ##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2025-Nov-19
+# Last Modified: 2025-Nov-20
 #---------------------------------------------------------
 
 #############################################
@@ -30,7 +30,7 @@
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
 readonly SCRIPT_VERSION="v1.2.4"
-readonly SCRIPT_VERSTAG="25111923"
+readonly SCRIPT_VERSTAG="25112022"
 SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
@@ -754,7 +754,7 @@ Conf_FromSettings()
 			rm -f "${SCRIPT_CONF}.tmp" "$PARSED_FILE"
 
 			if [ -s "${SCRIPT_CONF}.bak" ] && \
-			   ! diff "$SCRIPT_CONF" "${SCRIPT_CONF}.bak" >/dev/null 2>&1
+			   ! diff -q "$SCRIPT_CONF" "${SCRIPT_CONF}.bak" >/dev/null 2>&1
 			then RESTART_DNSMASQ=true
 			else RESTART_DNSMASQ="$DO_NVRAM_COMMIT"
 			fi
@@ -1661,7 +1661,7 @@ Auto_DNSMASQ_Handler()
 				fi
 				#---------------------------------------------------------------------------#
 				if [ ! -s "$configAddFileORIG" ] || \
-				   ! diff "$configAddFileTEMP" "$configAddFileORIG" >/dev/null 2>&1
+				   ! diff -q "$configAddFileTEMP" "$configAddFileORIG" >/dev/null 2>&1
 				then
 					dnsmasqConfigCHANGED=true
 				fi
