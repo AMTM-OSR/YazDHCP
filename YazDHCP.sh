@@ -13,7 +13,7 @@
 ##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2025-Nov-07
+# Last Modified: 2025-Nov-20
 #---------------------------------------------------------
 
 #############################################
@@ -29,9 +29,9 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
-readonly SCRIPT_VERSION="v1.2.3"
-readonly SCRIPT_VERSTAG="25110720"
-SCRIPT_BRANCH="master"
+readonly SCRIPT_VERSION="v1.2.4"
+readonly SCRIPT_VERSTAG="25112022"
+SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
 readonly SCRIPT_CONF="$SCRIPT_DIR/DHCP_clients"
@@ -109,7 +109,7 @@ readonly NVRAM_3004_DHCPvar_RegExp="dhcp_staticlist=[<]?${MACaddr_RegEx}>.+"
 readonly NVRAM_3006_DHCPvar_RegExp0="dhcpres[1-9][0-9]?_rl="
 readonly NVRAM_3006_DHCPvar_RegExp1="${NVRAM_3006_DHCPvar_RegExp0}<${MACaddr_RegEx}>.+"
 
-readonly addnDHCP_HostNames=false
+readonly addnDHCP_HostNames=true
 readonly guestNetInfoJSfileName="GuestNetworkSubnetInfo.js"
 readonly guestNetInfoJSfilePath="${SCRIPT_DIR}/$guestNetInfoJSfileName"
 readonly dhcpGuestNetAllowVarKey="allowGuestNet_IPaddr_Reservations"
@@ -754,7 +754,7 @@ Conf_FromSettings()
 			rm -f "${SCRIPT_CONF}.tmp" "$PARSED_FILE"
 
 			if [ -s "${SCRIPT_CONF}.bak" ] && \
-			   ! diff "$SCRIPT_CONF" "${SCRIPT_CONF}.bak" >/dev/null 2>&1
+			   ! diff -q "$SCRIPT_CONF" "${SCRIPT_CONF}.bak" >/dev/null 2>&1
 			then RESTART_DNSMASQ=true
 			else RESTART_DNSMASQ="$DO_NVRAM_COMMIT"
 			fi
@@ -1294,15 +1294,14 @@ _AllowGuestNetwork_IP_Reservations_()
 ##-------------------------------------##
 _Get_DHCP_NetworkTagStr_()
 {
-    if [ $# -eq 0 ] || [ -z "$1" ]
-    then echo ; return 1
+    if [ $# -lt 2 ] || [ -z "$1" ] || [ -z "$2" ]
+    then return 1
     fi
     local dnsmasqFileStr="/etc/dnsmasq.conf"
-    local dhcpOptionStr  dhcpRangeStr  dhcpNoIFaceID
-    local theIPaddr3  ipAddr3str  ipAddr4str  ifaceNameStr
+    local dhcpOptionStr1  dhcpOptionStr2  dhcpRangeStr1  dhcpRangeStr2
+    local theIPaddr3  ipAddr3str  ipAddr4str  ifaceNameStr  dhcpNoIFaceID
 
-    if [ "$fwInstalledBaseVers" -ge 3006 ] && \
-       { [ $# -lt 2 ] || [ "$2" != "MainLAN" ] ; }
+    if [ "$fwInstalledBaseVers" -ge 3006 ] && [ "$2" != "MainLAN" ]
     then dnsmasqFileStr="/etc/dnsmasq*.conf"
     fi
     dnsmasqIndxNum=""
@@ -1311,33 +1310,55 @@ _Get_DHCP_NetworkTagStr_()
     ipAddr4str="$(_EscapeChars_ "$1")"
     theIPaddr3="$(echo "$1" | cut -d'.' -f1-3)"
     ipAddr3str="$(_EscapeChars_ "$theIPaddr3")"
-    ifaceNameStr="$(_EscapeChars_ "$2")"
+    ifaceNameStr="$([ "$2" = "MainLAN" ] && echo "lan" || _EscapeChars_ "$2")"
 
     for dnsmasqFile in $(ls -1 $dnsmasqFileStr 2>/dev/null)
     do
-        dhcpRangeStr="$(grep -E "^dhcp-range=.*,${ipAddr3str}[.].*," "$dnsmasqFile")"
-        dhcpOptionStr="$(grep -E "^dhcp-option=.*,(3|option:router),${ipAddr4str}([,].*)?$" "$dnsmasqFile")"
         dhcpNoIFaceID="$(grep -E "^no-dhcp-interface=$ifaceNameStr" "$dnsmasqFile")"
-        if [ -z "$dhcpOptionStr" ] && [ -z "$dhcpRangeStr" ] && [ -z "$dhcpNoIFaceID" ]
+        dhcpRangeStr1="$(grep -E "^dhcp-range=.*,${ipAddr3str}[.].*," "$dnsmasqFile")"
+        dhcpRangeStr2="$(grep -E "^dhcp-range=(set:)?${ifaceNameStr},${ipAddr3str}[.].*," "$dnsmasqFile")"
+        dhcpOptionStr1="$(grep -E "^dhcp-option=.*,(3|option:router),${ipAddr4str}([,].*)?$" "$dnsmasqFile")"
+        dhcpOptionStr2="$(grep -E "^dhcp-option=(tag:)?${ifaceNameStr},(3|option:router),${ipAddr4str}([,].*)?$" "$dnsmasqFile")"
+
+        if [ -z "$dhcpNoIFaceID" ] && \
+           [ -z "$dhcpOptionStr1" ] && [ -z "$dhcpRangeStr1" ] && \
+           [ -z "$dhcpOptionStr2" ] && [ -z "$dhcpRangeStr2" ]
         then continue
         fi
-        if [ -n "$dhcpOptionStr" ]
+        if [ -n "$dhcpOptionStr2" ]
         then
-            dhcpNetwkTagID="$(echo "$dhcpOptionStr" | cut -d'=' -f2 | cut -d',' -f1)"
+            dhcpNetwkTagID="$(echo "$dhcpOptionStr2" | cut -d'=' -f2 | cut -d',' -f1)"
             if echo "$dhcpNetwkTagID" | grep -qE "^tag:.*"
             then
                 dhcpNetwkTagID="$(echo "$dhcpNetwkTagID" | cut -d':' -f2)"
             fi
         fi
-        if [ -z "$dhcpNetwkTagID" ] && [ -n "$dhcpRangeStr" ]
+        if [ -z "$dhcpNetwkTagID" ] && [ -n "$dhcpOptionStr1" ]
         then
-            dhcpNetwkTagID="$(echo "$dhcpRangeStr" | cut -d'=' -f2 | cut -d',' -f1)"
+            dhcpNetwkTagID="$(echo "$dhcpOptionStr1" | cut -d'=' -f2 | cut -d',' -f1)"
+            if echo "$dhcpNetwkTagID" | grep -qE "^tag:.*"
+            then
+                dhcpNetwkTagID="$(echo "$dhcpNetwkTagID" | cut -d':' -f2)"
+            fi
+        fi
+        if [ -z "$dhcpNetwkTagID" ] && [ -n "$dhcpRangeStr2" ]
+        then
+            dhcpNetwkTagID="$(echo "$dhcpRangeStr2" | cut -d'=' -f2 | cut -d',' -f1)"
             if echo "$dhcpNetwkTagID" | grep -qE "^set:.*"
             then
                 dhcpNetwkTagID="$(echo "$dhcpNetwkTagID" | cut -d':' -f2)"
             fi
         fi
-        if echo "$dnsmasqFile" | grep -qE '/etc/dnsmasq-[1-9][0-9]?.conf'
+        if [ -z "$dhcpNetwkTagID" ] && [ -n "$dhcpRangeStr1" ]
+        then
+            dhcpNetwkTagID="$(echo "$dhcpRangeStr1" | cut -d'=' -f2 | cut -d',' -f1)"
+            if echo "$dhcpNetwkTagID" | grep -qE "^set:.*"
+            then
+                dhcpNetwkTagID="$(echo "$dhcpNetwkTagID" | cut -d':' -f2)"
+            fi
+        fi
+        if [ -n "$dhcpNetwkTagID" ] && \
+           echo "$dnsmasqFile" | grep -qE '/etc/dnsmasq-[1-9][0-9]?.conf'
         then
             dnsmasqIndxNum="$(echo "$dnsmasqFile" | cut -d'-' -f2 | cut -d'.' -f1)"
         fi
@@ -1640,7 +1661,7 @@ Auto_DNSMASQ_Handler()
 				fi
 				#---------------------------------------------------------------------------#
 				if [ ! -s "$configAddFileORIG" ] || \
-				   ! diff "$configAddFileTEMP" "$configAddFileORIG" >/dev/null 2>&1
+				   ! diff -q "$configAddFileTEMP" "$configAddFileORIG" >/dev/null 2>&1
 				then
 					dnsmasqConfigCHANGED=true
 				fi
@@ -1751,10 +1772,11 @@ _CleanUp_DNSMasqConfigFiles_()
     then return
     fi
     local gnInfoStr  gnListOfIFaces=""  gnIFaceName
-    local staticAddRegExp  optionAddRegExp  configAddPrefix
-    local confAddFBKUP  configFName  configAddFile
+    local staticAddRegExp  optionAddRegExp  hostsnAddRegExp
+    local confAddFBKUP  configFName  configAddFile  configAddPrefix
 
     configAddPrefix="${JFFS_Configs_Dir}/dnsmasq-"
+    hostsnAddRegExp="addn-hosts=${SCRIPT_DIR}/.hostnames_"
     staticAddRegExp="dhcp-hostsfile=${SCRIPT_DIR}/.staticlist_"
     optionAddRegExp="dhcp-optsfile=${SCRIPT_DIR}/.optionslist_"
 
@@ -1775,12 +1797,13 @@ _CleanUp_DNSMasqConfigFiles_()
         then continue
         fi
         configAddFile="$(echo "$confAddFBKUP" | grep -oE "${configAddPrefix}.*.conf.add")"
-        if ! grep -qE "^($staticAddRegExp|$optionAddRegExp).*" "$confAddFBKUP"
+        if ! grep -qE "^($staticAddRegExp|$optionAddRegExp|$hostsnAddRegExp).*" "$confAddFBKUP"
         then
             _MoveOrDeleteFile_ "$confAddFBKUP"
             continue
         fi
         ## Remove unused YazDHCP custom lines ##
+        sed -i "\\~^${hostsnAddRegExp}.*~d" "$confAddFBKUP"
         sed -i "\\~^${staticAddRegExp}.*~d" "$confAddFBKUP"
         sed -i "\\~^${optionAddRegExp}.*~d" "$confAddFBKUP"
         _MoveOrDeleteFile_ "$confAddFBKUP"
@@ -1801,9 +1824,10 @@ _CleanUp_DNSMasqConfigFiles_()
         fi
         configAddFile="${JFFS_Configs_Dir}/${configFName}.add"
         if [ ! -s "$configAddFile" ] || \
-           ! grep -qE "^($staticAddRegExp|$optionAddRegExp).*" "$configAddFile"
+           ! grep -qE "^($staticAddRegExp|$optionAddRegExp|$hostsnAddRegExp).*" "$configAddFile"
         then
             ## Remove unused YazDHCP custom lines ##
+            sed -i "\\~^${hostsnAddRegExp}.*~d" "$configFPATH"
             sed -i "\\~^${staticAddRegExp}.*~d" "$configFPATH"
             sed -i "\\~^${optionAddRegExp}.*~d" "$configFPATH"
             continue
@@ -1813,7 +1837,7 @@ _CleanUp_DNSMasqConfigFiles_()
         then
             for gnIFaceName in $gnListOfIFaces
             do
-                if grep -qE "^($staticAddRegExp|$optionAddRegExp)$gnIFaceName #" "$configAddFile"
+                if grep -qE "^($staticAddRegExp|$optionAddRegExp|$hostsnAddRegExp)$gnIFaceName #" "$configAddFile"
                 then
                     isConfigAddFileOK=true ; break
                 fi
@@ -1821,6 +1845,7 @@ _CleanUp_DNSMasqConfigFiles_()
         fi
         "$isConfigAddFileOK" && continue
         ## Remove unused YazDHCP custom lines ##
+        sed -i "\\~^${hostsnAddRegExp}.*~d" "$configFPATH"
         sed -i "\\~^${staticAddRegExp}.*~d" "$configFPATH"
         sed -i "\\~^${optionAddRegExp}.*~d" "$configFPATH"
         dnsmasqConfigCHANGED=true
@@ -1879,7 +1904,7 @@ Auto_DNSMASQ()
 	ADDN_HostsFilePath="$SCRIPT_DIR/.hostnames"
 	ADDN_HostsComntTag="${SCRIPT_NAME}_hostnames"
 	ADDN_HostsDirctive="addn-hosts=$ADDN_HostsFilePath #${ADDN_HostsComntTag}#"
-	if ! "$addnDHCP_HostNames" || "$doIFaceDel"
+	if "$doIFaceDel"
 	then rm -f "$ADDN_HostsFilePath"
 	fi
 	#-----------------------------------------#
@@ -1964,7 +1989,7 @@ Auto_DNSMASQ()
 		#----------------#
 		ADDN_HostsComntTag="${SCRIPT_NAME}_hostnames_$gnIFaceName"
 		ADDN_HostsDirctive="addn-hosts=$ADDN_HostsFilePath #${ADDN_HostsComntTag}#"
-		if ! "$addnDHCP_HostNames" || "$doIFaceDel"
+		if "$doIFaceDel"
 		then rm -f "$ADDN_HostsFilePath"
 		fi
 		#-----------------------------------------#
@@ -3488,23 +3513,34 @@ _CIDR_IPaddrBlockContainsIPaddr_()
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2025-Sep-05] ##
+## Modified by Martinski W. [2025-Oct-19] ##
 ##----------------------------------------##
 Update_Hostnames_MainLAN()
 {
-	local theMACaddr  theIPaddr4  theHostName  theDNSaddr  theIPaddr3
+	local theMACaddr  theIPaddr4  theHostName  theDNSaddr
+	local theMACaddrTag  theIPaddr3
 	local LAN_IPaddr3="$(echo "$mainLAN_IPaddr" | cut -d'.' -f1-3)"
 
 	while IFS=',' read -r theMACaddr theIPaddr4 theHostName theDNSaddr
 	do
-		if [ "$theMACaddr" = "MAC" ] || \
-             [ -z "$theHostName" ] || [ -z "$theIPaddr4" ]
+		if [ "$theMACaddr" = "MAC" ] || [ -z "$theHostName" ] || \
+		   [ -z "$theMACaddr" ] || [ -z "$theIPaddr4" ] || \
+		   ! echo "$theMACaddr" | grep -qE "^${MACaddr_RegEx}$" || \
+		   ! echo "$theIPaddr4" | grep -qE "^${IPv4privtx_RegEx}$"
 		then continue
 		fi
+		theMACaddrTag="#${theMACaddr}#"
+
+		if [ -s "$hostNamesFilePATH" ] && \
+		   grep -q "$theMACaddrTag" "$hostNamesFilePATH"
+		then continue  #Prevent Duplicates#
+		fi
+
 		theIPaddr3="$(echo "$theIPaddr4" | cut -d'.' -f1-3)"
-		if [ "$theIPaddr3" = "$LAN_IPaddr3" ]
+		if [ "$theIPaddr3" = "$LAN_IPaddr3" ] || \
+		   _CIDR_IPaddrBlockContainsIPaddr_ "$mainNET_CIDR" "$theIPaddr4"
 		then
-			echo "$theIPaddr4 $theHostName" >> "$hostNamesFilePATH"
+			echo "$theIPaddr4 $theHostName  $theMACaddrTag" >> "$hostNamesFilePATH"
 		fi
 	done < "$SCRIPT_CONF"
 }
@@ -3515,24 +3551,27 @@ Update_Hostnames_MainLAN()
 Update_Hostnames_GuestNet()
 {
 	local gnExistingMD5  gnUpdatedMD5  theIPaddr3
-	local gnInfoStr  gnListOfIFaces  gnIFaceVarStr
-	local gnIFaceName  gnStartIPaddr4  gnStartIPaddr3
-	local theMACaddr  theIPaddr4  theHostName  theDNSaddr
-	local hostNamesFileGNET  hostNamesFileBKUP  gnIFaceDelEntry
+	local gnInfoStr  gnIFaceVarStr  gnListOfIFaces=""
+	local gnIFaceName  gnStartIPaddr4  gnStartIPaddr3  gnSubnet_CIDR
+	local theMACaddr  theIPaddr4  theHostName  theDNSaddr  gnIFaceDelEntry
+	local hostNamesFileGNET  hostNamesFileBKUP  theMACaddrTag  retCode
 
 	gnInfoStr="$(_Get_GuestNetwork_SubnetInfo_)"
-	if [ "${#gnInfoStr}" -eq 0 ]
-	then return 1
+	if [ "${#gnInfoStr}" -gt 0 ]
+	then
+		gnListOfIFaces="$(echo "$gnInfoStr" | cut -d'=' -f1 | cut -d'_' -f2)"
 	fi
-	gnListOfIFaces="$(echo "$gnInfoStr" | cut -d'=' -f1 | cut -d'_' -f2)"
 	if [ -z "$gnListOfIFaces" ]
-	then return 1
+	then
+		CleanUp_Hostnames_GuestNet
+		return 1
 	fi
 
 	if ! "$(_AllowGuestNetwork_IP_Reservations_ check)"
 	then gnIFaceDelEntry=true
 	else gnIFaceDelEntry=false
 	fi
+	retCode=1
 
 	for gnIFaceName in $gnListOfIFaces
 	do
@@ -3544,6 +3583,7 @@ Update_Hostnames_GuestNet()
 		then
 			if [ -s "$hostNamesFileGNET" ]
 			then
+				retCode=0
 				Print_Output true "DHCP hostname list for Guest Network [$gnIFaceName] was removed" "$WARN" oneline
 				if [ "$fwInstalledBaseVers" -ge 3006 ]
 				then RESTART_DNSMASQ=true
@@ -3562,26 +3602,39 @@ Update_Hostnames_GuestNet()
 		gnIFaceVarStr="GNIFACE_${gnIFaceName}="
 		gnStartIPaddr4="$(echo "$gnInfoStr" | grep -E "^${gnIFaceVarStr}.*" | cut -d'=' -f2 | cut -d',' -f1)"
 		gnStartIPaddr3="$(echo "$gnStartIPaddr4" | cut -d'.' -f1-3)"
+		gnSubnet_CIDR="$(echo "$gnInfoStr" | grep -E "^${gnIFaceVarStr}.*" | cut -d'=' -f2 | cut -d',' -f3)"
 
 		while IFS=',' read -r theMACaddr theIPaddr4 theHostName theDNSaddr
 		do
-			if [ "$theMACaddr" = "MAC" ] || \
-			   [ -z "$theHostName" ] || [ -z "$theIPaddr4" ]
+			if [ "$theMACaddr" = "MAC" ] || [ -z "$theHostName" ] || \
+			   [ -z "$theMACaddr" ] || [ -z "$theIPaddr4" ]       || \
+			   ! echo "$theMACaddr" | grep -qE "^${MACaddr_RegEx}$" || \
+			   ! echo "$theIPaddr4" | grep -qE "^${IPv4privtx_RegEx}$"
 			then continue
 			fi
+			theMACaddrTag="#${theMACaddr}#"
+
+			if [ -s "$hostNamesFilePATH" ]        && \
+			   [ "$fwInstalledBaseVers" -lt 3006 ] && \
+			   grep -q "$theMACaddrTag" "$hostNamesFilePATH"
+			then continue  #Prevent Duplicates#
+			fi
+
 			theIPaddr3="$(echo "$theIPaddr4" | cut -d'.' -f1-3)"
-			if [ "$theIPaddr3" = "$gnStartIPaddr3" ]
+			if [ "$theIPaddr3" = "$gnStartIPaddr3" ] || \
+			   _CIDR_IPaddrBlockContainsIPaddr_ "$gnSubnet_CIDR" "$theIPaddr4"
 			then
-				echo "$theIPaddr4 $theHostName" >> "$hostNamesFileGNET"
+				echo "$theIPaddr4 $theHostName  $theMACaddrTag" >> "$hostNamesFileGNET"
 			fi
 		done < "$SCRIPT_CONF"
 
-		if [ -s "$hostNamesFileGNET" ]
+		if [ "$(_GetFileSizeBytes_ "$hostNamesFileGNET")" -ge 3 ]
 		then
 			gnUpdatedMD5="$(md5sum "$hostNamesFileGNET" | awk '{print $1}')"
 		fi
 		if [ -n "$gnUpdatedMD5" ] && [ "$gnExistingMD5" != "$gnUpdatedMD5" ]
 		then
+			retCode=0
 			Print_Output true "DHCP hostname list for Guest Network [$gnIFaceName] updated successfully" "$PASS" oneline
 			if [ "$fwInstalledBaseVers" -ge 3006 ]
 			then RESTART_DNSMASQ=true
@@ -3590,6 +3643,7 @@ Update_Hostnames_GuestNet()
 		then
 			if [ -s "$hostNamesFileBKUP" ]
 			then
+				retCode=0
 				Print_Output true "DHCP hostname list for Guest Network [$gnIFaceName] was removed." "$WARN" oneline
 				if [ "$fwInstalledBaseVers" -ge 3006 ]
 				then RESTART_DNSMASQ=true
@@ -3601,11 +3655,44 @@ Update_Hostnames_GuestNet()
 			fi
 			Print_Output true "DHCP hostname list for Guest Network [$gnIFaceName] remains unchanged" "$PASS" oneline
 		fi
-		if [ "$fwInstalledBaseVers" -lt 3006 ] && [ -s "$hostNamesFileGNET" ]
+		if [ -s "$hostNamesFileGNET" ] && \
+		   [ "$fwInstalledBaseVers" -lt 3006 ]
 		then
 			cat "$hostNamesFileGNET" >> "$hostNamesFilePATH"
 		fi
 		"$delBkupCopy" && rm -f "$hostNamesFileBKUP"
+		if [ "$(_GetFileSizeBytes_ "$hostNamesFileGNET")" -lt 3 ]
+		then rm -f "$hostNamesFileGNET"
+		fi
+	done
+
+	CleanUp_Hostnames_GuestNet
+	return "$retCode"
+}
+
+##-------------------------------------##
+## Added by Martinski W. [2025-Sep-13] ##
+##-------------------------------------##
+CleanUp_Hostnames_GuestNet()
+{
+	local gnInfoStr  gnIFaceName  gnListOfIFaces=""
+	local hostNamesRegExp  hostNamesFPath
+
+	gnInfoStr="$(_Get_GuestNetwork_SubnetInfo_)"
+	if [ "${#gnInfoStr}" -gt 0 ]
+	then
+		gnListOfIFaces="$(echo "$gnInfoStr" | cut -d'=' -f1 | cut -d'_' -f2)"
+	fi
+
+	hostNamesRegExp="${SCRIPT_DIR}/.hostnames_*"
+	for hostNamesFPath in $(ls -1 $hostNamesRegExp 2>/dev/null)
+	do
+		gnIFaceName="$(basename "$hostNamesFPath" | cut -d'_' -f2)"
+		if ! echo "$gnIFaceName" | grep -qE "^${guestNetIFaces0RegExp}$" || \
+		   echo "${gnListOfIFaces:=NONE}" | grep -qw "$gnIFaceName"
+		then continue
+		fi
+		rm -f "$hostNamesFPath"
 	done
 }
 
@@ -3618,7 +3705,7 @@ Update_StaticList_MainLAN()
 	local hostNameEntry  dhcpNetwkTagID  dhcpNetTagStr  theIPaddr3
 	local LAN_IPaddr3="$(echo "$mainLAN_IPaddr" | cut -d'.' -f1-3)"
 
-	_Get_DHCP_NetworkTagStr_ "$mainLAN_IPaddr" MainLAN
+	_Get_DHCP_NetworkTagStr_ "$mainLAN_IPaddr" "MainLAN"
 
 	while IFS=',' read -r theMACaddr theIPaddr4 theHostName theDNSaddr
 	do
@@ -3763,7 +3850,8 @@ Update_StaticList_GuestNet()
 			fi
 			Print_Output true "DHCP IP address reservation list for Guest Network [$gnIFaceName] remains unchanged" "$PASS" oneline
 		fi
-		if [ "$fwInstalledBaseVers" -lt 3006 ] && [ -s "$staticListFileGNET" ]
+		if [ -s "$staticListFileGNET" ] && \
+		   [ "$fwInstalledBaseVers" -lt 3006 ]
 		then
 			cat "$staticListFileGNET" >> "$staticListFilePATH"
 		fi
@@ -3812,7 +3900,7 @@ Update_OptionsList_MainLAN()
 	local dhcpNetwkTagID  dhcpNetTagStr  theIPaddr3
 	local LAN_IPaddr3="$(echo "$mainLAN_IPaddr" | cut -d'.' -f1-3)"
 
-	_Get_DHCP_NetworkTagStr_ "$mainLAN_IPaddr" MainLAN
+	_Get_DHCP_NetworkTagStr_ "$mainLAN_IPaddr" "MainLAN"
 
 	while IFS=',' read -r theMACaddr theIPaddr4 theHostName theDNSaddr
 	do
@@ -3949,7 +4037,8 @@ Update_OptionsList_GuestNet()
 			fi
 			Print_Output true "DHCP options list for Guest Network [$gnIFaceName] remains unchanged" "$PASS" oneline
 		fi
-		if [ "$fwInstalledBaseVers" -lt 3006 ] && [ -s "$optionsListFileGNET" ]
+		if [ -s "$optionsListFileGNET" ] && \
+		   [ "$fwInstalledBaseVers" -lt 3006 ]
 		then
 			cat "$optionsListFileGNET" >> "$optionsListFilePATH"
 		fi
@@ -3990,56 +4079,49 @@ CleanUp_OptionsList_GuestNet()
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2025-Sep-05] ##
+## Modified by Martinski W. [2025-Nov-14] ##
 ##----------------------------------------##
 Update_Hostnames()
 {
 	local lanExistingMD5=""  lanUpdatedMD5=""  msgTagStr=""
 	local hostNamesFilePATH="$SCRIPT_DIR/.hostnames"
-	local hostNamesFileORIG="${hostNamesFilePATH}.BKUP"
+	local hostNamesFileBKUP="${hostNamesFilePATH}.BKUP"
 
-	#-----------------------------------------------------------------
-	# The Hostnames file is no longer needed because the information 
-     # is now included/embedded in the "staticlist" file.
-	#-----------------------------------------------------------------
-	if ! "$addnDHCP_HostNames"
-	then
-		rm -f "$hostNamesFilePATH" "$hostNamesFileORIG"
-		return 0
-	fi
+	##OFF## ! "$addnDHCP_HostNames" && return 0 ##OFF##
 
 	if [ -s "$hostNamesFilePATH" ]
 	then
 		lanExistingMD5="$(md5sum "$hostNamesFilePATH" | awk '{print $1}')"
-		mv -f "$hostNamesFilePATH" "$hostNamesFileORIG"
+		mv -f "$hostNamesFilePATH" "$hostNamesFileBKUP"
 	fi
 	printf "" > "$hostNamesFilePATH"
 
 	Update_Hostnames_MainLAN
-	##OFF## Update_Hostnames_GuestNet ##OFF##
-
-	if [ -s "$hostNamesFilePATH" ]
-	then
-		lanUpdatedMD5="$(md5sum "$hostNamesFilePATH" | awk '{print $1}')"
-	fi
-
-	if "$(_AllowGuestNetwork_IP_Reservations_ check)"
+	Update_Hostnames_GuestNet
+	if [ $? -eq 0 ] || "$(_AllowGuestNetwork_IP_Reservations_ check)"
 	then msgTagStr="for main LAN [$mainLAN_IFname] "
 	fi
 
+	if [ "$(_GetFileSizeBytes_ "$hostNamesFilePATH")" -ge 3 ]
+	then
+		lanUpdatedMD5="$(md5sum "$hostNamesFilePATH" | awk '{print $1}')"
+	fi
 	if [ -n "$lanUpdatedMD5" ] && [ "$lanExistingMD5" != "$lanUpdatedMD5" ]
 	then
 		Print_Output true "DHCP hostname list ${msgTagStr}updated successfully" "$PASS" oneline
 		RESTART_DNSMASQ=true
-	elif [ -n "$lanUpdatedMD5" ]
+	elif [ -n "$lanUpdatedMD5" ]  #NO Change#
 	then
-		if [ -s "$hostNamesFileORIG" ]
-		then cp -fp "$hostNamesFileORIG" "$hostNamesFilePATH"
+		if [ "$(_GetFileSizeBytes_ "$hostNamesFileBKUP")" -ge 3 ]
+		then cp -fp "$hostNamesFileBKUP" "$hostNamesFilePATH"
 		fi
 		"$verboseMode" && \
 		Print_Output true "DHCP hostname list ${msgTagStr}remains unchanged" "$PASS" oneline
 	fi
-	"$delBkupCopy" && rm -f "$hostNamesFileORIG"
+	"$delBkupCopy" && rm -f "$hostNamesFileBKUP"
+	if [ "$(_GetFileSizeBytes_ "$hostNamesFilePATH")" -lt 3 ]
+	then rm -f "$hostNamesFilePATH"
+	fi
 }
 
 ##----------------------------------------##
