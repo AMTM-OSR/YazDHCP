@@ -104,7 +104,7 @@ The reason is that, unlike the built-in NVRAM key-value pairs, the format of the
 
 So if you have created such custom files, you basically have 3 choices to transfer your current IP address assignments to YazDHCP:
 
-a) Manually transfer the IP address assignments back into **NVRAM** by inputting them into the corresponding WebUI page for each Guest Network profile. Once this is completed, you can use the SSH CLI 'x' menu option to trigger the export process.
+a) Manually transfer the IP address assignments back into **NVRAM** by inputting them into the corresponding WebUI page for each Guest Network profile. Once this is completed, you can use the SSH CLI '**x**' menu option to trigger the export process.
 
 b) Manually transfer the IP address assignments directly into the YazDHCP internal CSV-formatted client list (/jffs/addons/YazDHCP.d/DHCP_clients) by following the required format shown below:
 
@@ -132,14 +132,14 @@ Then manually add your IP address reservations to the CSV file. After you have f
 
 Also, it's very important to make sure you ***remove*** all IP address reservations from your custom files that have been transferred to YazDHCP to prevent dnsmasq from getting duplicate entries/directives, which is bound to cause some issues when restarting the dnsmasq process.
 
-Equally important, make sure to click on the "Apply" button from the YazDHCP webpage whenever any changes occurred, including but not limited to:
+Equally important, make sure to click on the "**Apply**" button from the YazDHCP webpage whenever any changes are made, including but not limited to:
 
 - Any Guest Network is enabled or disabled, regardless of the subnet range being separate/different from the Main LAN.
 - Any DHCP IP address assignment is manually added, modified, or removed from the list.
 - Any CSV file containing IP address assignments is imported, even if the list has not changed.
 - Any time a DHCP IP address assignment appears to be ignored or not honored by dnsmasq.
 
-This is to make all changes are synchronized with and reflected on YazDHCP internal files, and dnsmasq is restarted.
+This is to make sure all changes are synchronized with and reflected on YazDHCP internal files, and dnsmasq is restarted.
 
 
 ## "DHCP Lease" time values
