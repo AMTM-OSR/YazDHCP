@@ -13,7 +13,7 @@
 ##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2025-Nov-20
+# Last Modified: 2026-Mar-21
 #---------------------------------------------------------
 
 #############################################
@@ -29,9 +29,9 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
-readonly SCRIPT_VERSION="v1.2.4"
-readonly SCRIPT_VERSTAG="25112022"
-SCRIPT_BRANCH="master"
+readonly SCRIPT_VERSION="v1.2.5"
+readonly SCRIPT_VERSTAG="26032100"
+SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
 readonly SCRIPT_CONF="$SCRIPT_DIR/DHCP_clients"
@@ -74,6 +74,9 @@ readonly branchxStr_TAG="[Branch: $SCRIPT_BRANCH]"
 readonly versionDev_TAG="${SCRIPT_VERSION}_${SCRIPT_VERSTAG}"
 readonly versionMod_TAG="$SCRIPT_VERSION on $ROUTER_MODEL"
 
+# To support automatic script updates from AMTM #
+doScriptUpdateFromAMTM=true
+
 # Give higher priority to built-in binaries #
 export PATH="/bin:/usr/bin:/sbin:/usr/sbin:$PATH"
 
@@ -109,7 +112,6 @@ readonly NVRAM_3004_DHCPvar_RegExp="dhcp_staticlist=[<]?${MACaddr_RegEx}>.+"
 readonly NVRAM_3006_DHCPvar_RegExp0="dhcpres[1-9][0-9]?_rl="
 readonly NVRAM_3006_DHCPvar_RegExp1="${NVRAM_3006_DHCPvar_RegExp0}<${MACaddr_RegEx}>.+"
 
-readonly addnDHCP_HostNames=true
 readonly guestNetInfoJSfileName="GuestNetworkSubnetInfo.js"
 readonly guestNetInfoJSfilePath="${SCRIPT_DIR}/$guestNetInfoJSfileName"
 readonly dhcpGuestNetAllowVarKey="allowGuestNet_IPaddr_Reservations"
@@ -962,6 +964,23 @@ Update_Version()
 		fi
 		exit 0
 	fi
+}
+
+##-------------------------------------##
+## Added by Martinski W. [2026-Feb-18] ##
+##-------------------------------------##
+ScriptUpdateFromAMTM()
+{
+    if ! "$doScriptUpdateFromAMTM"
+    then
+        printf "Automatic script updates via AMTM are currently disabled.\n\n"
+        return 1
+    fi
+    if [ $# -gt 0 ] && [ "$1" = "check" ]
+    then return 0
+    fi
+    Update_Version force unattended
+    return "$?"
 }
 
 ##----------------------------------------##
@@ -3597,7 +3616,7 @@ Update_Hostnames_GuestNet()
 			gnExistingMD5="$(md5sum "$hostNamesFileGNET" | awk '{print $1}')"
 			mv -f "$hostNamesFileGNET" "$hostNamesFileBKUP"
 		fi
-		printf "" > "$hostNamesFileGNET"
+		printf '' > "$hostNamesFileGNET"
 
 		gnIFaceVarStr="GNIFACE_${gnIFaceName}="
 		gnStartIPaddr4="$(echo "$gnInfoStr" | grep -E "^${gnIFaceVarStr}.*" | cut -d'=' -f2 | cut -d',' -f1)"
@@ -3788,7 +3807,7 @@ Update_StaticList_GuestNet()
 			gnExistingMD5="$(md5sum "$staticListFileGNET" | awk '{print $1}')"
 			mv -f "$staticListFileGNET" "$staticListFileBKUP"
 		fi
-		printf "" > "$staticListFileGNET"
+		printf '' > "$staticListFileGNET"
 
 		gnIFaceVarStr="GNIFACE_${gnIFaceName}="
 		gnStartIPaddr4="$(echo "$gnInfoStr" | grep -E "^${gnIFaceVarStr}.*" | cut -d'=' -f2 | cut -d',' -f1)"
@@ -3979,7 +3998,7 @@ Update_OptionsList_GuestNet()
 			gnExistingMD5="$(md5sum "$optionsListFileGNET" | awk '{print $1}')"
 			mv -f "$optionsListFileGNET" "$optionsListFileBKUP"
 		fi
-		printf "" > "$optionsListFileGNET"
+		printf '' > "$optionsListFileGNET"
 
 		gnIFaceVarStr="GNIFACE_${gnIFaceName}="
 		gnStartIPaddr4="$(echo "$gnInfoStr" | grep -E "^${gnIFaceVarStr}.*" | cut -d'=' -f2 | cut -d',' -f1)"
@@ -4084,17 +4103,14 @@ CleanUp_OptionsList_GuestNet()
 Update_Hostnames()
 {
 	local lanExistingMD5=""  lanUpdatedMD5=""  msgTagStr=""
-	local hostNamesFilePATH="$SCRIPT_DIR/.hostnames"
 	local hostNamesFileBKUP="${hostNamesFilePATH}.BKUP"
-
-	##OFF## ! "$addnDHCP_HostNames" && return 0 ##OFF##
 
 	if [ -s "$hostNamesFilePATH" ]
 	then
 		lanExistingMD5="$(md5sum "$hostNamesFilePATH" | awk '{print $1}')"
 		mv -f "$hostNamesFilePATH" "$hostNamesFileBKUP"
 	fi
-	printf "" > "$hostNamesFilePATH"
+	printf '' > "$hostNamesFilePATH"
 
 	Update_Hostnames_MainLAN
 	Update_Hostnames_GuestNet
@@ -4130,7 +4146,6 @@ Update_Hostnames()
 Update_StaticList()
 {
 	local lanExistingMD5=""  lanUpdatedMD5=""  msgTagStr=""
-	local staticListFilePATH="$SCRIPT_DIR/.staticlist"
 	local staticListFileBKUP="${staticListFilePATH}.BKUP"
 
 	if [ -s "$staticListFilePATH" ]
@@ -4138,7 +4153,7 @@ Update_StaticList()
 		lanExistingMD5="$(md5sum "$staticListFilePATH" | awk '{print $1}')"
 		mv -f "$staticListFilePATH" "$staticListFileBKUP"
 	fi
-	printf "" > "$staticListFilePATH"
+	printf '' > "$staticListFilePATH"
 
 	Update_StaticList_MainLAN
 	Update_StaticList_GuestNet
@@ -4174,7 +4189,6 @@ Update_StaticList()
 Update_OptionsList()
 {
 	local lanExistingMD5=""  lanUpdatedMD5=""  msgTagStr=""
-	local optionsListFilePATH="$SCRIPT_DIR/.optionslist"
 	local optionsListFileBKUP="${optionsListFilePATH}.BKUP"
 
 	if [ -s "$optionsListFilePATH" ]
@@ -4182,7 +4196,7 @@ Update_OptionsList()
 		lanExistingMD5="$(md5sum "$optionsListFilePATH" | awk '{print $1}')"
 		mv -f "$optionsListFilePATH" "$optionsListFileBKUP"
 	fi
-	printf "" > "$optionsListFilePATH"
+	printf '' > "$optionsListFilePATH"
 
 	Update_OptionsList_MainLAN
 	Update_OptionsList_GuestNet
@@ -4218,6 +4232,10 @@ Update_OptionsList()
 Process_DHCP_Clients()
 {
 	local retCode=1  delBkupCopy=true  verboseMode
+	local hostNamesFilePATH="$SCRIPT_DIR/.hostnames"
+	local staticListFilePATH="$SCRIPT_DIR/.staticlist"
+	local optionsListFilePATH="$SCRIPT_DIR/.optionslist"
+
 	if [ $# -gt 0 ] && { [ "$1" = "true" ] || [ "$1" = "false" ] ; }
 	then RESTART_DNSMASQ="$1"
 	else RESTART_DNSMASQ=false
@@ -4226,6 +4244,9 @@ Process_DHCP_Clients()
 	if [ ! -s "$SCRIPT_CONF" ] || \
 	   ! grep -qv "MAC,IP,HOSTNAME,DNS" "$SCRIPT_CONF"
 	then
+		printf '' > "$hostNamesFilePATH"
+		printf '' > "$staticListFilePATH"
+		printf '' > "$optionsListFilePATH"
 		Print_Output true "No DHCP client IP address assignments were found." "$WARN"
 		return 1
 	fi
@@ -4891,7 +4912,7 @@ else SCRIPT_VERS_INFO="[$versionDev_TAG]"
 fi
 
 ##----------------------------------------##
-## Modified by Martinski W. [2025-Sep-05] ##
+## Modified by Martinski W. [2026-Feb-18] ##
 ##----------------------------------------##
 if [ $# -eq 0 ] || [ -z "$1" ]
 then
@@ -5014,11 +5035,16 @@ case "$1" in
 		Update_Version force unattended
 		exit 0
 	;;
+	amtmupdate)
+		shift
+		ScriptUpdateFromAMTM "$@"
+		exit "$?"
+	;;
 	setversion)
 		Set_Version_Custom_Settings local
 		Set_Version_Custom_Settings server "$SCRIPT_VERSION"
 		if [ $# -lt 2 ] || [ -z "$2" ]
-          then
+		then
 			exec "$0"
 		fi
 		exit 0
