@@ -13,7 +13,7 @@
 ##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2026-Jul-25
+# Last Modified: 2026-Sep-12
 #---------------------------------------------------------
 
 #############################################
@@ -21,6 +21,7 @@
 # shellcheck disable=SC2016
 # shellcheck disable=SC2018
 # shellcheck disable=SC2019
+# shellcheck disable=SC2045
 # shellcheck disable=SC2059
 # shellcheck disable=SC2155
 # shellcheck disable=SC3043
@@ -30,49 +31,47 @@
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
 readonly SCRIPT_VERSION="v1.2.7"
-readonly SCRIPT_VERSTAG="26072500"
+readonly SCRIPT_VERSTAG="26091223"
 SCRIPT_BRANCH="develop"
-SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/$SCRIPT_NAME/$SCRIPT_BRANCH"
-readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
+SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/${SCRIPT_NAME}/$SCRIPT_BRANCH"
+
+readonly TEMP_DIR="/tmp/var/tmp"
+readonly JFFS_ADDONS="/jffs/addons"
+readonly JFFS_SCRIPTS="/jffs/scripts"
+readonly SCRIPT_DIR="${JFFS_ADDONS}/${SCRIPT_NAME}.d"
 readonly SCRIPT_CONF="$SCRIPT_DIR/DHCP_clients"
+readonly SCRIPT_FPATH="${JFFS_SCRIPTS}/$SCRIPT_NAME"
 readonly SCRIPT_WEBPAGE_DIR="$(readlink -f /www/user)"
 readonly SCRIPT_WEB_DIR="$SCRIPT_WEBPAGE_DIR/$SCRIPT_NAME"
-readonly SHARED_DIR="/jffs/addons/shared-jy"
+readonly SHARED_DIR="${JFFS_ADDONS}/shared-jy"
 readonly SHARED_REPO="https://raw.githubusercontent.com/AMTM-OSR/shared-jy/master"
 readonly SHARED_WEB_DIR="$SCRIPT_WEBPAGE_DIR/shared-jy"
 readonly SHARED_CUSTOM_CONFIG_NAME="custom_settings.txt"
-readonly SHARED_CUSTOM_CONFIG_FILE="/jffs/addons/$SHARED_CUSTOM_CONFIG_NAME"
+readonly SHARED_CUSTOM_CONFIG_FILE="${JFFS_ADDONS}/$SHARED_CUSTOM_CONFIG_NAME"
 readonly SHARED_CUSTOM_CONFIG_BACKUP="${SCRIPT_DIR}/${SHARED_CUSTOM_CONFIG_NAME}.BAKUP"
 
 ### End of script variables ###
 
 ### Start of output format variables ###
-readonly CRIT="\\e[41m"
-readonly ERR="\\e[31m"
-readonly WARN="\\e[33m"
-readonly PASS="\\e[32m"
-readonly BOLD="\\e[1m"
-readonly CLEARct="\\e[0m"
+readonly CRIT="\e[41m"
+readonly ERR="\e[31m"
+readonly WARN="\e[33m"
+readonly PASS="\e[32m"
+readonly BOLD="\e[1m"
+readonly CLEARct="\e[0m"
+readonly CLRct="\e[0m"
+readonly BOLDtext="\e[1m"
+readonly LREDct="\e[1;31m"
+readonly LGRNct="\e[1;32m"
+readonly MGNTct="\e[1;35m"
+readonly CYANct="\e[1;36m"
+readonly GRAYct="\e[0;37m"
+readonly GRAYEDct="\e[0;30;47m"
+readonly REDct="${LREDct}${BOLDtext}"
+readonly GRNct="${LGRNct}${BOLDtext}"
+readonly WarnBYLWct="\e[30;103m"
+readonly theExitStr="${GRNct}e${CLRct}=Exit"
 ### End of output format variables ###
-
-##----------------------------------------##
-## Modified by Martinski W. [2024-Jun-27] ##
-##----------------------------------------##
-
-### Start of router environment variables ###
-[ -z "$(nvram get odmpid)" ] && ROUTER_MODEL="$(nvram get productid)" || ROUTER_MODEL="$(nvram get odmpid)"
-ROUTER_MODEL="$(echo "$ROUTER_MODEL" | tr 'a-z' 'A-Z')"
-
-##----------------------------------------##
-## Modified by Martinski W. [2025-Mar-16] ##
-##----------------------------------------##
-readonly fwInstalledBaseVers="$(nvram get firmver | sed 's/\.//g')"
-readonly fwInstalledBuildVers="$(nvram get buildno)"
-readonly fwInstalledBranchVer="${fwInstalledBaseVers}.${fwInstalledBuildVers}"
-readonly scriptVersRegExp="v[0-9]{1,2}([.][0-9]{1,2})([.][0-9]{1,2})"
-readonly branchxStr_TAG="[Branch: $SCRIPT_BRANCH]"
-readonly versionDev_TAG="${SCRIPT_VERSION}_${SCRIPT_VERSTAG}"
-readonly versionMod_TAG="$SCRIPT_VERSION on $ROUTER_MODEL"
 
 # To support automatic script updates from AMTM #
 doScriptUpdateFromAMTM=true
@@ -83,17 +82,14 @@ unset LD_LIBRARY_PATH
 # Give higher priority to built-in binaries #
 export PATH="/bin:/usr/bin:/sbin:/usr/sbin:$PATH"
 
-### End of router environment variables ###
+if [ -t 0 ] && ! tty | grep -qwi "NOT"
+then readonly isInteractive=true
+else readonly isInteractive=false
+fi
 
 ##-------------------------------------##
 ## Added by Martinski W. [2025-Sep-05] ##
 ##-------------------------------------##
-readonly wifiIFnameList="$(nvram get wl_ifnames)"
-readonly mainLAN_IFname="$(nvram get lan_ifname)"
-readonly mainLAN_IPaddr="$(nvram get lan_ipaddr)"
-readonly mainNET_IPmask="$(nvram get lan_netmask)"
-readonly mainNET_CIDR="$(ip route show | grep -E "dev[[:blank:]]* ${mainLAN_IFname}[[:blank:]]* proto kernel" | awk -F' ' '{print $1}')"
-
 # For Guest Network Virtual Interfaces #
 readonly guestNetIFaces0RegExp="(wl[0-3][.][1-3]|br[1-9][0-9]?)"
 readonly guestNetIFaces1RegExp="${guestNetIFaces0RegExp}[[:blank:]]* Link encap:"
@@ -173,6 +169,10 @@ readonly SCRIPT_USER_ICONS_STATUS="/tmp/$userIconsSavedSTAname"
 readonly SCRIPT_USER_ICONS_CONFIG="${SCRIPT_DIR}/$userIconsSavedCFGname"
 readonly userIconsCFGCommentLine="## DO *NOT* EDIT THIS FILE BELOW THIS LINE. IT'S DYNAMICALLY UPDATED ##"
 
+readonly curlHTTPstatusStr="HTTP_Status_Code"
+readonly curlTmpLogFile="${TEMP_DIR}/tmpCurl_${SCRIPT_NAME}_$$.TMP.LOG"
+readonly curlErrLogFile="${TEMP_DIR}/tmpCurl_${SCRIPT_NAME}_$$.ERR.LOG"
+
 readonly userIconsBKPListHeader="From directory:"
 readonly userIconsSavedBKPList="CustomUserIconsBackupList"
 readonly SCRIPT_USER_ICONS_BKPLST="/tmp/$userIconsSavedBKPList"
@@ -181,18 +181,6 @@ readonly theHighWaterMarkThreshold=5
 readonly theMinUserIconsBackupFiles=5
 readonly theMaxUserIconsBackupFiles=50
 readonly defMaxUserIconsBackupFiles=20
-
-readonly CLRct="\e[0m"
-readonly BOLDtext="\e[1m"
-readonly LghtRED="\e[1;31m"
-readonly LghtGREEN="\e[1;32m"
-readonly MGNTct="\e[1;35m"
-readonly GRAYct="\e[0;37m"
-readonly GRAYEDct="\e[0;30;47m"
-readonly REDct="${LghtRED}${BOLDtext}"
-readonly GRNct="${LghtGREEN}${BOLDtext}"
-readonly WarnBYLWct="\e[30;103m"
-readonly theExitStr="${GRNct}e${CLRct}=Exit"
 
 readonly MaxBckupsOpt="mx"
 readonly BackupDirOpt="dp"
@@ -218,6 +206,12 @@ theBackupFilesMatch="${userIconsBackupFPath}_*.$userIconsSavedFLEextn"
 ##==================================================================##
 
 ##-------------------------------------##
+## Added by Martinski W. [2026-Sep-06] ##
+##-------------------------------------##
+_PrintMsg_()
+{ "$isInteractive" && printf "$1" ; }
+
+##-------------------------------------##
 ## Added by Martinski W. [2025-Sep-05] ##
 ##-------------------------------------##
 # Remove all "color escape sequences" from the system log file entries #
@@ -238,7 +232,7 @@ Print_Output()
 	then prioStr="$3"
 	else prioStr="NOTICE"
 	fi
-	if [ "$1" = "true" ] || [ "$1" = "logOnly" ]
+	if [ "$1" = "true" ] || [ "$1" = "LogOnly" ]
 	then
 		case "$prioStr" in
 		    "$CRIT") prioNum=2 ;;
@@ -250,7 +244,7 @@ Print_Output()
 		logMsg="$(_RemoveColorEscapeSequences_ "$2")"
 		printf "$logMsg" | logger -t "${SCRIPT_NAME}_[$$]" -p $prioNum
 	fi
-	if [ "$1" != "logOnly" ]
+	if "$isInteractive" && [ "$1" != "LogOnly" ]
 	then
 		printf "${BOLD}${3}${2}${CLRct}\n"
 		if [ $# -lt 4 ] || [ "$4" != "oneline" ]
@@ -258,12 +252,94 @@ Print_Output()
 	fi
 }
 
+##-------------------------------------##
+## Added by Martinski W. [2026-Sep-07] ##
+##-------------------------------------##
+readonly nvramInitUSleep=10
+readonly nvramWaitUSleep=50
+readonly nvramWaitFactor=20000
+readonly nvramWaitSecMAX=2
+readonly nvramWaitCntMAX="$((nvramWaitSecMAX * nvramWaitFactor))"
+readonly nvramValueTempFPath="${TEMP_DIR}/nvramValue_${SCRIPT_NAME}_$$.TMP.TXT"
+##-------------------------------------##
+_NVRAM_Get_()
+{
+   local nvramProcID  nvramProcOK=false  retCode=1
+   local waitCountNUM=0  logMsgStr  nvramKeyValue=""
+
+   printf '' > "$nvramValueTempFPath"
+   nvram get "$1" > "$nvramValueTempFPath" &
+   nvramProcID="$!"
+   usleep "$nvramInitUSleep"
+
+   while true
+   do
+       if ! kill -EXIT "$nvramProcID" 2>/dev/null
+       then nvramProcOK=true ; break
+       fi
+       usleep "$nvramWaitUSleep"
+       waitCountNUM="$((waitCountNUM + 1))"
+       if [ "$waitCountNUM" -ge "$nvramWaitCntMAX" ]
+       then break
+       fi
+   done
+
+   if kill -EXIT "$nvramProcID" 2>/dev/null
+   then
+       nvramProcOK=false
+       kill -KILL "$nvramProcID" 2>/dev/null ; wait "$nvramProcID"
+       logMsgStr="**ALERT**: Wait timeout [$nvramWaitSecMAX secs] for 'nvram get $1' command expired."
+       Print_Output true "$logMsgStr" "$ERR"
+   fi
+   if "$nvramProcOK" && [ -s "$nvramValueTempFPath" ]
+   then
+       nvramKeyValue="$(cat "$nvramValueTempFPath")"
+       retCode=0
+   fi
+
+   rm -f "$nvramValueTempFPath"
+   echo "$nvramKeyValue"
+   return "$retCode"
+}
+
+##----------------------------------------##
+## Modified by Martinski W. [2024-Jun-27] ##
+##----------------------------------------##
+[ -z "$(_NVRAM_Get_ odmpid)" ] && ROUTER_MODEL="$(_NVRAM_Get_ productid)" || ROUTER_MODEL="$(_NVRAM_Get_ odmpid)"
+ROUTER_MODEL="$(echo "$ROUTER_MODEL" | tr 'a-z' 'A-Z')"
+
+##----------------------------------------##
+## Modified by Martinski W. [2025-Mar-16] ##
+##----------------------------------------##
+readonly fwInstalledBaseVers="$(_NVRAM_Get_ firmver | sed 's/\.//g')"
+readonly fwInstalledBuildVers="$(_NVRAM_Get_ buildno)"
+readonly fwInstalledBranchVer="${fwInstalledBaseVers}.${fwInstalledBuildVers}"
+readonly scriptVersRegExp="v[0-9]{1,2}([.][0-9]{1,2})([.][0-9]{1,2})"
+readonly branchxStr_TAG="[Branch: $SCRIPT_BRANCH]"
+readonly versionDev_TAG="${SCRIPT_VERSION}_${SCRIPT_VERSTAG}"
+readonly versionMod_TAG="$SCRIPT_VERSION on $ROUTER_MODEL"
+
+##-------------------------------------##
+## Added by Martinski W. [2025-Sep-05] ##
+##-------------------------------------##
+readonly LAN_DomainName="$(_NVRAM_Get_ lan_domain)"
+readonly wifiIFnameList="$(_NVRAM_Get_ wl_ifnames)"
+readonly mainLAN_IFname="$(_NVRAM_Get_ lan_ifname)"
+readonly mainLAN_IPaddr="$(_NVRAM_Get_ lan_ipaddr)"
+readonly mainNET_IPmask="$(_NVRAM_Get_ lan_netmask)"
+readonly mainNET_CIDR="$(ip route show | grep -E "dev[[:blank:]]* ${mainLAN_IFname}[[:blank:]]* proto kernel" | awk -F' ' '{print $1}')"
+
+##----------------------------------------##
+## Modified by Martinski W. [2026-Sep-06] ##
+##----------------------------------------##
 Firmware_Version_Check()
 {
-	if nvram get rc_support | grep -qF "am_addons"
+	if _NVRAM_Get_ rc_support | grep -qF 'am_addons'
 	then return 0
-	else return 1
 	fi
+	Print_Output true "Unsupported firmware version detected" "$ERR"
+	Print_Output true "WebUI is supported only on firmware versions with add-on support" "$ERR"
+	return 1
 }
 
 ### Code for this function courtesy of https://github.com/decoderman- credit to @thelonelycoder ###
@@ -326,23 +402,6 @@ _GetFileSizeBytes_()
     ls -1l "$1" | awk -F ' ' '{print $3}'
 }
 
-Validate_IP()
-{
-	if expr "$1" : '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null
-	then
-		for i in 1 2 3 4
-		do
-			if [ "$(echo "$1" | cut -d. -f$i)" -gt 255 ]; then
-				Print_Output false "Octet $i ($(echo "$1" | cut -d. -f$i)) - is invalid, must be less than 255" "$ERR"
-				return 1
-			fi
-		done
-	else
-		Print_Output false "$1 - is not a valid IPv4 address, valid format is 1.2.3.4" "$ERR"
-		return 1
-	fi
-}
-
 ##----------------------------------------------##
 ## Added/modified by Martinski W. [2023-Jan-30] ##
 ##----------------------------------------------##
@@ -393,7 +452,7 @@ DHCP_LeaseValueToSeconds()
 ##----------------------------------------------##
 Check_DHCP_LeaseTime()
 {
-   NVRAM_LeaseTime="$(nvram get "$DHCP_LEASE_KEYN")"
+   NVRAM_LeaseTime="$(_NVRAM_Get_ "$DHCP_LEASE_KEYN")"
 
    if [ ! -f "$SCRIPT_DHCP_LEASE_CONF" ]
    then
@@ -855,89 +914,136 @@ Set_Version_Custom_Settings()
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2025-Sep-05] ##
+## Modified by Martinski W. [2026-Sep-06] ##
 ##----------------------------------------##
 Download_File()
 {
-	if [ $# -lt 2 ] || [ -z "$1" ] || [ -z "$2" ]
-	then return 1
-	fi
-	local tempFilePathDL="${2}.DWLD.TMP"
+   if [ $# -lt 3 ] || [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]
+   then return 1
+   fi
 
-	curl -LSs --retry 4 --retry-delay 5 --retry-connrefused \
-	     "$1" -o "$tempFilePathDL"
-	if [ $? -ne 0 ] || [ ! -s "$tempFilePathDL" ] || \
-	   grep -iq "^404: Not Found" "$tempFilePathDL"
-	then
-		Print_Output true "**ERROR**: Unable to download file [$2] for $SCRIPT_NAME." "$ERR"
-		rm -f "$tempFilePathDL"
-		return 1
-	else
-		mv -f "$tempFilePathDL" "$2"
-		return 0
-	fi
+   local srcFilePathURL="${1}/$2"
+   local tempFilePathDL="${TEMP_DIR}/${2}.DL.$$.TMP"
+   local theDestFName="$2"  theDestFPath="$3"
+   local theMsgStr  logMsgStr
+   local curlRetCode  returnCODE  statusSTRx  httpStatusSTR
+
+   rm -f "$tempFilePathDL"
+   printf '' > "$curlErrLogFile"
+   printf '' > "$curlTmpLogFile"
+
+   curl -LSs --retry 3 --retry-delay 5 --retry-connrefused \
+   --connect-timeout 30 --max-time 60 \
+   -w "${curlHTTPstatusStr}: %{http_code}\n" --stderr "$curlErrLogFile" \
+   "$srcFilePathURL" --output "$tempFilePathDL" >> "$curlTmpLogFile"
+   curlRetCode="$?"
+
+   returnCODE="$curlRetCode"
+   statusSTRx="Curl Status Code: $curlRetCode"
+   httpStatusSTR="$(grep -oE "${curlHTTPstatusStr}: [4-5][0-9]{2,}" "$curlTmpLogFile")"
+
+   if [ "$curlRetCode" -eq 0 ] && \
+      [ -z "$httpStatusSTR" ] && [ -s "$tempFilePathDL" ]
+   then
+       mv -f "$tempFilePathDL" "$theDestFPath"
+       dos2unix "$theDestFPath" ; chmod 644 "$theDestFPath"
+   else
+       if [ "$curlRetCode" -eq 0 ] && [ -n "$httpStatusSTR" ]
+       then
+           returnCODE="$(echo "$httpStatusSTR" | awk -F' ' '{print $2}')"
+           statusSTRx="HTTP Status Code: $returnCODE"
+       fi
+       if [ -s "$curlErrLogFile" ] && "$isInteractive"
+       then echo ; cat "$curlErrLogFile"
+       fi
+       logMsgStr="**ERROR**: Unable to download the file [$theDestFName] [${statusSTRx}]"
+       theMsgStr="\n${REDct}**ERROR**${CLRct}: Unable to download the file ${REDct}${theDestFName}${CLRct} [${MGNTct}${statusSTRx}${CLRct}]\n"
+
+       _PrintMsg_ "$theMsgStr"
+       Print_Output LogOnly "$logMsgStr" "$ERR"
+       rm -f "$tempFilePathDL"
+   fi
+
+   rm -f "$curlErrLogFile" "$curlTmpLogFile"
+   return "$returnCODE"
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2025-Mar-16] ##
+## Modified by Martinski W. [2026-Sep-07] ##
 ##----------------------------------------##
 Update_Check()
 {
-	echo 'var updatestatus = "InProgress";' > "$SCRIPT_WEB_DIR/detect_update.js"
-	doupdate="false"
-	localVer="$(grep "SCRIPT_VERSION=" /jffs/scripts/"$SCRIPT_NAME" | grep -m1 -oE "$scriptVersRegExp")"
-	curl -fsL --retry 4 --retry-delay 5 "$SCRIPT_REPO/$SCRIPT_NAME.sh" | grep -qF "jackyaz" || \
-	{ Print_Output true "404 error detected - stopping update" "$ERR" ; return 1 ; }
-	serverVer="$(curl -fsL --retry 4 --retry-delay 5 "$SCRIPT_REPO/$SCRIPT_NAME.sh" | grep "SCRIPT_VERSION=" | grep -m1 -oE "$scriptVersRegExp")"
-	if [ "$localVer" != "$serverVer" ]
+	echo 'var updatestatus = "InProgress";' > "${SCRIPT_WEB_DIR}/detect_update.js"
+	tempFPathSHx="${TEMP_DIR}/${SCRIPT_NAME}.TMP.SH" ; rm -f "$tempFPathSHx"
+	if ! Download_File "$SCRIPT_REPO" "${SCRIPT_NAME}.sh" "$tempFPathSHx"
 	then
-		doupdate="version"
+		Print_Output true "$SCRIPT_NAME script was NOT updated. Download failed." "$ERR"
+		echo 'var updatestatus = "None";' > "${SCRIPT_WEB_DIR}/detect_update.js"
+		echo "false,$SCRIPT_VERSION,$SCRIPT_VERSION"
+		return 1
+	fi
+
+	getUpdate="false"
+	localVers="$(grep '^readonly SCRIPT_VERSION=' "$SCRIPT_FPATH" | grep -m1 -oE "$scriptVersRegExp")"
+	serverVer="$(grep '^readonly SCRIPT_VERSION=' "$tempFPathSHx" | grep -m1 -oE "$scriptVersRegExp")"
+	if [ "$localVers" != "$serverVer" ]
+	then
+		getUpdate="version"
 		Set_Version_Custom_Settings server "$serverVer"
-		echo 'var updatestatus = "'"$serverVer"'";'  > "$SCRIPT_WEB_DIR/detect_update.js"
+		echo 'var updatestatus = "'"$serverVer"'";'  > "${SCRIPT_WEB_DIR}/detect_update.js"
 	else
-		localmd5="$(md5sum "/jffs/scripts/$SCRIPT_NAME" | awk '{print $1}')"
-		remotemd5="$(curl -fsL --retry 4 --retry-delay 5 "$SCRIPT_REPO/$SCRIPT_NAME.sh" | md5sum | awk '{print $1}')"
-		if [ "$localmd5" != "$remotemd5" ]
+		localxMD5="$(md5sum "$SCRIPT_FPATH" | awk '{print $1}')"
+		remoteMD5="$(md5sum "$tempFPathSHx" | awk '{print $1}')"
+		if [ "$localxMD5" != "$remoteMD5" ]
 		then
-			doupdate="md5"
+			getUpdate="md5"
 			Set_Version_Custom_Settings server "${serverVer}-hotfix"
-			echo 'var updatestatus = "'"${serverVer}-hotfix"'";'  > "$SCRIPT_WEB_DIR/detect_update.js"
+			echo 'var updatestatus = "'"${serverVer}-hotfix"'";'  > "${SCRIPT_WEB_DIR}/detect_update.js"
 		fi
 	fi
-	if [ "$doupdate" = "false" ]; then
-		echo 'var updatestatus = "None";' > "$SCRIPT_WEB_DIR/detect_update.js"
+	if [ "$getUpdate" = "false" ]
+	then
+		echo 'var updatestatus = "None";' > "${SCRIPT_WEB_DIR}/detect_update.js"
 	fi
-	echo "$doupdate,$localVer,$serverVer"
+	rm -f "$tempFPathSHx"
+	echo "$getUpdate,$localVers,$serverVer"
+	return 0
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2025-Mar-16] ##
+## Modified by Martinski W. [2026-Sep-07] ##
 ##----------------------------------------##
 Update_Version()
 {
 	if [ $# -eq 0 ] || [ -z "$1" ] || [ "$1" = "unattended" ]
 	then
-		updatecheckresult="$(Update_Check)"
-		isupdate="$(echo "$updatecheckresult" | cut -f1 -d',')"
-		localVer="$(echo "$updatecheckresult" | cut -f2 -d',')"
-		serverVer="$(echo "$updatecheckresult" | cut -f3 -d',')"
+		updateCheckResult="$(Update_Check)"
+		getUpdate="$(echo "$updateCheckResult" | cut -d',' -f1)"
+		localVers="$(echo "$updateCheckResult" | cut -d',' -f2)"
+		serverVer="$(echo "$updateCheckResult" | cut -d',' -f3)"
 
-		if [ "$isupdate" = "version" ]
+		if [ "$getUpdate" = "version" ]
 		then
 			Print_Output true "New version of $SCRIPT_NAME available - updating to $serverVer" "$PASS"
-		elif [ "$isupdate" = "md5" ]
+		elif [ "$getUpdate" = "md5" ]
 		then
-			Print_Output true "MD5 hash of $SCRIPT_NAME does not match - downloading updated $serverVer" "$PASS"
+			Print_Output true "MD5 hash of $SCRIPT_NAME does NOT match - downloading updated $serverVer" "$PASS"
 		fi
 
 		Update_File shared-jy.tar.gz
 
-		if [ "$isupdate" != "false" ]
+		if [ "$getUpdate" != "false" ]
 		then
 			Update_File "$LAN_DHCP_SERVER_WEBPAGE"
-			Download_File "$SCRIPT_REPO/$SCRIPT_NAME.sh" "/jffs/scripts/$SCRIPT_NAME" && \
-			Print_Output true "$SCRIPT_NAME successfully updated" "$PASS"
-			[ -s "/jffs/scripts/$SCRIPT_NAME" ] && chmod 0755 "/jffs/scripts/$SCRIPT_NAME"
+			if ! Download_File "$SCRIPT_REPO" "${SCRIPT_NAME}.sh" "$SCRIPT_FPATH"
+			then
+				Print_Output true "$SCRIPT_NAME script file was NOT updated. Download failed." "$ERR"
+				Clear_Lock ; return 1
+			fi
+			chmod 755 "$SCRIPT_FPATH"
+			Print_Output true "$SCRIPT_NAME was successfully updated" "$PASS"
+			Set_Version_Custom_Settings local "$serverVer"
+			Set_Version_Custom_Settings server "$serverVer"
 			Clear_Lock
 			if [ $# -eq 0 ] || [ -z "$1" ]
 			then
@@ -948,20 +1054,26 @@ Update_Version()
 			fi
 			exit 0
 		else
-			Print_Output true "No new version - latest is $localVer" "$WARN"
+			Print_Output true "No new version - latest is $localVers" "$WARN"
 			Clear_Lock
 		fi
 	fi
 
 	if [ $# -gt 0 ] && [ "$1" = "force" ]
 	then
-		serverVer="$(curl -fsL --retry 4 --retry-delay 5 "$SCRIPT_REPO/$SCRIPT_NAME.sh" | grep "SCRIPT_VERSION=" | grep -m1 -oE "$scriptVersRegExp")"
-		Print_Output true "Downloading latest version ($serverVer) of $SCRIPT_NAME" "$PASS"
-		Update_File "$LAN_DHCP_SERVER_WEBPAGE"
 		Update_File shared-jy.tar.gz
-		Download_File "$SCRIPT_REPO/$SCRIPT_NAME.sh" "/jffs/scripts/$SCRIPT_NAME" && \
-		Print_Output true "$SCRIPT_NAME successfully updated" "$PASS"
-		[ -s "/jffs/scripts/$SCRIPT_NAME" ] && chmod 0755 "/jffs/scripts/$SCRIPT_NAME"
+		Update_File "$LAN_DHCP_SERVER_WEBPAGE"
+		if ! Download_File "$SCRIPT_REPO" "${SCRIPT_NAME}.sh" "$SCRIPT_FPATH"
+		then
+			Print_Output true "$SCRIPT_NAME script was NOT updated. Download failed." "$ERR"
+			Clear_Lock ; return 1
+		fi
+		chmod 755 "$SCRIPT_FPATH"
+		serverVer="$(grep '^readonly SCRIPT_VERSION=' "$SCRIPT_FPATH" | grep -m1 -oE "$scriptVersRegExp")"
+		Print_Output true "Downloaded the latest version ($serverVer) of $SCRIPT_NAME" "$PASS"
+		Print_Output true "$SCRIPT_NAME was successfully updated" "$PASS"
+		Set_Version_Custom_Settings local "$serverVer"
+		Set_Version_Custom_Settings server "$serverVer"
 		Clear_Lock
 		if [ $# -lt 2 ] || [ -z "$2" ]
 		then
@@ -992,49 +1104,64 @@ ScriptUpdateFromAMTM()
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2025-Sep-05] ##
+## Modified by Martinski W. [2026-Sep-06] ##
 ##----------------------------------------##
 Update_File()
 {
 	if [ "$1" = "$LAN_DHCP_SERVER_WEBPAGE" ]
 	then
-		webUIupdateOK=true
-		local tmpfile="/tmp/$1"
-		if [ -f "$SCRIPT_DIR/$1" ]
+		webUIupdateOK=false
+		tempFileASP="${TEMP_DIR}/${1}.TMP.ASP" ; rm -f "$tempFileASP"
+		if [ -s "${SCRIPT_DIR}/$1" ]
 		then
-			Download_File "$SCRIPT_REPO/$1" "$tmpfile"
-			if ! diff -q "$tmpfile" "$SCRIPT_DIR/$1" >/dev/null 2>&1
+			if ! Download_File "$SCRIPT_REPO" "$1" "$tempFileASP"
 			then
-				Download_File "$SCRIPT_REPO/$1" "$SCRIPT_DIR/$1" && \
-				Print_Output true "New version of $1 downloaded" "$PASS"
+				Print_Output true "The WebUI file [$1] was NOT updated. Download failed." "$ERR"
+				return 1
+			fi
+			if ! diff -q "$tempFileASP" "${SCRIPT_DIR}/$1" >/dev/null 2>&1
+			then
+				mv -f "$tempFileASP" "${SCRIPT_DIR}/$1"
+				chmod 644 "${SCRIPT_DIR}/$1"
+				Print_Output true "New version of $1 was downloaded" "$PASS"
 				Mount_WebUI
 			fi
-			rm -f "$tmpfile"
+			webUIupdateOK=true
+			rm -f "$tempFileASP"
 		else
-			Download_File "$SCRIPT_REPO/$1" "$SCRIPT_DIR/$1" && \
-			Print_Output true "New version of $1 downloaded" "$PASS"
+			if ! Download_File "$SCRIPT_REPO" "$1" "${SCRIPT_DIR}/$1"
+			then
+				Print_Output true "The WebUI file [$1] was NOT updated. Download failed." "$ERR"
+				return 1
+			fi
+			webUIupdateOK=true
+			Print_Output true "New version of $1 was downloaded" "$PASS"
 			Mount_WebUI
 		fi
 	elif [ "$1" = "shared-jy.tar.gz" ]
 	then
-		if [ ! -f "$SHARED_DIR/${1}.md5" ]
+		tempFileMD5="${TEMP_DIR}/${1}.TMP.MD5" ; rm -f "$tempFileMD5"
+		if ! Download_File "$SHARED_REPO" "${1}.md5" "$tempFileMD5"
 		then
-			Download_File "$SHARED_REPO/$1" "$SHARED_DIR/$1"
-			Download_File "$SHARED_REPO/${1}.md5" "$SHARED_DIR/${1}.md5"
-			tar -xzf "$SHARED_DIR/$1" -C "$SHARED_DIR"
-			rm -f "$SHARED_DIR/$1"
-			Print_Output true "New version of $1 downloaded" "$PASS"
-		else
-			localmd5="$(cat "$SHARED_DIR/${1}.md5")"
-			remotemd5="$(curl -fsL --retry 4 --retry-delay 5 "$SHARED_REPO/${1}.md5")"
-			if [ "$localmd5" != "$remotemd5" ]
+			Print_Output true "Download failed for shared archive file [$1]" "$ERR"
+			return 1
+		fi
+		if [ ! -s "${SHARED_DIR}/${1}.md5" ] || \
+		   [ "$(cat "${SHARED_DIR}/${1}.md5")" != "$(cat "$tempFileMD5")" ]
+		then
+			if ! Download_File "$SHARED_REPO" "$1" "${SHARED_DIR}/$1"
 			then
-				Download_File "$SHARED_REPO/$1" "$SHARED_DIR/$1"
-				Download_File "$SHARED_REPO/${1}.md5" "$SHARED_DIR/${1}.md5"
-				tar -xzf "$SHARED_DIR/$1" -C "$SHARED_DIR"
-				rm -f "$SHARED_DIR/$1"
-				Print_Output true "New version of $1 downloaded" "$PASS"
+				rm -f "$tempFileMD5"
+				Print_Output true "Download failed for shared archive file [$1]" "$ERR"
+				return 1
 			fi
+			mv -f "$tempFileMD5" "${SHARED_DIR}/${1}.md5"
+			chmod 644 "${SHARED_DIR}/${1}.md5"
+			tar -xzf "${SHARED_DIR}/$1" -C "$SHARED_DIR"
+			rm -f "${SHARED_DIR}/$1"
+			Print_Output true "New version of $1 was downloaded" "$PASS"
+		else
+			rm -f "$tempFileMD5"
 		fi
 	else
 		return 1
@@ -1121,7 +1248,7 @@ _Get_ActiveGuestNetwork_VirtualInterfaces_()
     fi
     [ -n "$gnListOfIFaces" ] && return 0
 
-    Print_Output logOnly "List of Guest Network Interfaces is EMPTY." "$ERR"
+    Print_Output LogOnly "List of Guest Network Interfaces is EMPTY." "$ERR"
     return 1
 }
 
@@ -1196,7 +1323,7 @@ _Init_ActiveGuestNetwork_SubnetInfo_()
 ##-------------------------------------##
 _Is_DHCP_Static_IPs_Enabled_()
 {
-   if [ "$(nvram get dhcp_static_x)" = "1" ]
+   if [ "$(_NVRAM_Get_ dhcp_static_x)" = "1" ]
    then
        echo "true" ; return 0
    else
@@ -1260,7 +1387,7 @@ _AllowGuestNetwork_IP_Reservations_()
     if [ $# -eq 0 ] || [ -z "$1" ]
     then return 1
     fi
-    local setVerboseMode=true  prevStatusFlag="NONE"
+    local setVerboseMode=true  prevStatusFlag="NONE"  stateFlag=""
 
     [ "$1" != "check" ] && _Update_GuestNetCheck_Status_ INIT
 
@@ -1280,7 +1407,7 @@ _AllowGuestNetwork_IP_Reservations_()
 
     case "$1" in
         check)
-            grep -E "^${dhcpGuestNetAllowVarKey}=.*" "$dhcpGuestNetConfigFPath" | cut -d'=' -f2
+            stateFlag="$(grep -E "^${dhcpGuestNetAllowVarKey}=.*" "$dhcpGuestNetConfigFPath" | cut -d'=' -f2)"
             ;;
         reset)
             echo "${dhcpGuestNetAllowVarKey}=false" > "$dhcpGuestNetConfigFPath"
@@ -1313,6 +1440,7 @@ _AllowGuestNetwork_IP_Reservations_()
             ;;
     esac
 
+    [ "$1" = "check" ] && echo "$stateFlag"
     return 0
 }
 
@@ -1337,7 +1465,11 @@ _Get_DHCP_NetworkTagStr_()
     ipAddr4str="$(_EscapeChars_ "$1")"
     theIPaddr3="$(echo "$1" | cut -d'.' -f1-3)"
     ipAddr3str="$(_EscapeChars_ "$theIPaddr3")"
-    ifaceNameStr="$([ "$2" = "MainLAN" ] && echo "lan" || _EscapeChars_ "$2")"
+
+    if [ "$2" = "MainLAN" ]
+    then ifaceNameStr="lan"
+    else ifaceNameStr="$(_EscapeChars_ "$2")"
+    fi
 
     for dnsmasqFile in $(ls -1 $dnsmasqFileStr 2>/dev/null)
     do
@@ -1385,7 +1517,7 @@ _Get_DHCP_NetworkTagStr_()
             fi
         fi
         if [ -n "$dhcpNetwkTagID" ] && \
-           echo "$dnsmasqFile" | grep -qE '/etc/dnsmasq-[1-9][0-9]?.conf'
+           echo "$dnsmasqFile" | grep -qE '/etc/dnsmasq-[1-9][0-9]?[.]conf'
         then
             dnsmasqIndxNum="$(echo "$dnsmasqFile" | cut -d'-' -f2 | cut -d'.' -f1)"
         fi
@@ -1524,40 +1656,40 @@ Create_Symlinks()
 ##----------------------------------------##
 Auto_ServiceEvent()
 {
-	local theScriptFilePath="/jffs/scripts/$SCRIPT_NAME"
+	local theScriptFilePath="$SCRIPT_FPATH"
 	case "$1" in
 		create)
-			if [ -s /jffs/scripts/service-event ]
+			if [ -s "${JFFS_SCRIPTS}/service-event" ]
 			then
-				STARTUPLINECOUNT="$(grep -c '# '"$SCRIPT_NAME" /jffs/scripts/service-event)"
-				STARTUPLINECOUNTEX="$(grep -cx 'if echo "$2" | /bin/grep -q "'"$SCRIPT_NAME"'" || { \[ "$1" = "restart" \] && \[ "$2" = "wireless" \]; }; then { '"$theScriptFilePath"' service_event "$@" & }; fi # '"$SCRIPT_NAME" /jffs/scripts/service-event)"
+				STARTUPLINECOUNT="$(grep -c '# '"$SCRIPT_NAME" "${JFFS_SCRIPTS}/service-event")"
+				STARTUPLINECOUNTEX="$(grep -cx 'if echo "$2" | /bin/grep -q "'"$SCRIPT_NAME"'" || { \[ "$1" = "restart" \] && \[ "$2" = "wireless" \]; }; then { '"$theScriptFilePath"' service_event "$@" & }; fi # '"$SCRIPT_NAME" "${JFFS_SCRIPTS}/service-event")"
 
 				if [ "$STARTUPLINECOUNT" -gt 1 ] || { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ]; }
 				then
-					sed -i -e '/# '"$SCRIPT_NAME"'/d' /jffs/scripts/service-event
+					sed -i -e '/# '"$SCRIPT_NAME"'/d' "${JFFS_SCRIPTS}/service-event"
 				fi
 				if [ "$STARTUPLINECOUNTEX" -eq 0 ]
 				then
 					{
 					   echo 'if echo "$2" | /bin/grep -q "'"$SCRIPT_NAME"'" || { [ "$1" = "restart" ] && [ "$2" = "wireless" ]; }; then { '"$theScriptFilePath"' service_event "$@" & }; fi # '"$SCRIPT_NAME"
-					} >> /jffs/scripts/service-event
+					} >> "${JFFS_SCRIPTS}/service-event"
 				fi
 			else
 				{
 				   echo "#!/bin/sh" ; echo
 				   echo 'if echo "$2" | /bin/grep -q "'"$SCRIPT_NAME"'" || { [ "$1" = "restart" ] && [ "$2" = "wireless" ]; }; then { '"$theScriptFilePath"' service_event "$@" & }; fi # '"$SCRIPT_NAME"
 				   echo
-				} > /jffs/scripts/service-event
+				} > "${JFFS_SCRIPTS}/service-event"
 			fi
-			chmod 0755 /jffs/scripts/service-event
+			chmod 755 "${JFFS_SCRIPTS}/service-event"
 		;;
 		delete)
-			if [ -s /jffs/scripts/service-event ]
+			if [ -s "${JFFS_SCRIPTS}/service-event" ]
 			then
-				STARTUPLINECOUNT="$(grep -c '# '"$SCRIPT_NAME" /jffs/scripts/service-event)"
+				STARTUPLINECOUNT="$(grep -c '# '"$SCRIPT_NAME" "${JFFS_SCRIPTS}/service-event")"
 				if [ "$STARTUPLINECOUNT" -gt 0 ]
 				then
-					sed -i -e '/# '"$SCRIPT_NAME"'/d' /jffs/scripts/service-event
+					sed -i -e '/# '"$SCRIPT_NAME"'/d' "${JFFS_SCRIPTS}/service-event"
 				fi
 			fi
 		;;
@@ -1571,34 +1703,34 @@ Auto_Startup()
 {
 	case $1 in
 		create)
-			if [ -s /jffs/scripts/services-start ]
+			if [ -s "${JFFS_SCRIPTS}/services-start" ]
 			then
-				STARTUPLINECOUNT="$(grep -c '# '"$SCRIPT_NAME" /jffs/scripts/services-start)"
-				STARTUPLINECOUNTEX="$(grep -cx "/jffs/scripts/$SCRIPT_NAME startup"' "$@" & # '"$SCRIPT_NAME" /jffs/scripts/services-start)"
+				STARTUPLINECOUNT="$(grep -c '# '"$SCRIPT_NAME" "${JFFS_SCRIPTS}/services-start")"
+				STARTUPLINECOUNTEX="$(grep -cx "$SCRIPT_FPATH startup"' "$@" & # '"$SCRIPT_NAME" "${JFFS_SCRIPTS}/services-start")"
 
 				if [ "$STARTUPLINECOUNT" -gt 1 ] || { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ]; }
 				then
-					sed -i -e '/# '"$SCRIPT_NAME"'/d' /jffs/scripts/services-start
+					sed -i -e '/# '"$SCRIPT_NAME"'/d' "${JFFS_SCRIPTS}/services-start"
 				fi
 				if [ "$STARTUPLINECOUNTEX" -eq 0 ]; then
-					echo "/jffs/scripts/$SCRIPT_NAME startup"' "$@" & # '"$SCRIPT_NAME" >> /jffs/scripts/services-start
+					echo "$SCRIPT_FPATH startup"' "$@" & # '"$SCRIPT_NAME" >> "${JFFS_SCRIPTS}/services-start"
 				fi
 			else
 				{
 				   echo "#!/bin/sh" ; echo
-				   echo "/jffs/scripts/$SCRIPT_NAME startup"' "$@" & # '"$SCRIPT_NAME"
+				   echo "$SCRIPT_FPATH startup"' "$@" & # '"$SCRIPT_NAME"
 				   echo
-				} > /jffs/scripts/services-start
+				} > "${JFFS_SCRIPTS}/services-start"
 			fi
-			chmod 0755 /jffs/scripts/services-start
+			chmod 755 "${JFFS_SCRIPTS}/services-start"
 		;;
 		delete)
-			if [ -s /jffs/scripts/services-start ]
+			if [ -s "${JFFS_SCRIPTS}/services-start" ]
 			then
-				STARTUPLINECOUNT="$(grep -c '# '"$SCRIPT_NAME" /jffs/scripts/services-start)"
+				STARTUPLINECOUNT="$(grep -c '# '"$SCRIPT_NAME" "${JFFS_SCRIPTS}/services-start")"
 				if [ "$STARTUPLINECOUNT" -gt 0 ]
 				then
-					sed -i -e '/# '"$SCRIPT_NAME"'/d' /jffs/scripts/services-start
+					sed -i -e '/# '"$SCRIPT_NAME"'/d' "${JFFS_SCRIPTS}/services-start"
 				fi
 			fi
 		;;
@@ -1606,105 +1738,195 @@ Auto_Startup()
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2025-Sep-05] ##
+## Modified by Martinski W. [2026-Sep-12] ##
 ##----------------------------------------##
 Auto_DNSMASQ_Handler()
 {
 	if [ $# -eq 0 ] || [ -z "$1" ]
 	then return 1
 	fi
-	local theCommenTagStr  configAddFileTEMP  configAddFileORIG
-	configAddFileORIG="${configAddFilePath}.ORIG.BKUP"
+	local theCommenTagStr  configAddFilePREV
+	local configAddFileORIG="${configAddFilePath}.ORIG.BKUP"
+    local configAddFileTEMP="${configAddFilePath}.TEMP.$$.BKUP"
 
 	case $1 in
 		create)
-			configAddFileTEMP="${configAddFilePath}.TEMP.BKUP"
+			configAddFilePREV="${configAddFilePath}.PREV.BKUP"
 
 			if [ -s "$configAddFileORIG" ]
 			then
-				cp -fp "$configAddFileORIG" "$configAddFileTEMP"
+				cp -fp "$configAddFileORIG" "$configAddFilePREV"
 				#---------------------------------------------------------------------------#
 				theCommenTagStr="# $ADDN_HostsComntTag"
-				STARTUPLINECOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
-				if [ "$STARTUPLINECOUNT" -gt 0 ]
+				commentCOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
+				if [ "$commentCOUNT" -gt 0 ]
 				then
 					sed -i -e "/${theCommenTagStr}/d" "$configAddFileORIG"
 				fi
 				theCommenTagStr="#${ADDN_HostsComntTag}#"
-				STARTUPLINECOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
-				STARTUPLINECOUNTEX="$(grep -cx "$ADDN_HostsDirctive" "$configAddFileORIG")"
-				if [ "$STARTUPLINECOUNT" -gt 1 ] || \
-				   { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; } || \
-				   { [ ! -s "$ADDN_HostsFilePath" ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; }
+				commentCOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
+				directiveCOUNT="$(grep -cx "^$ADDN_HostsDirctive" "$configAddFileORIG")"
+				if [ "$commentCOUNT" -gt 1 ] || \
+				   { [ "$directiveCOUNT" -eq 0 ] && [ "$commentCOUNT" -gt 0 ] ; } || \
+				   { [ ! -s "$ADDN_HostsFilePath" ] && [ "$commentCOUNT" -gt 0 ] ; } || \
+				   { [ ! -s "$ADDN_HostsFilePath" ] && [ "$directiveCOUNT" -gt 0 ] ; }
 				then
 					sed -i -e "/${theCommenTagStr}/d" "$configAddFileORIG"
+					sed -i -e "\\~^${ADDN_HostsDirctive}.*~d" "$configAddFileORIG"
 				fi
-				STARTUPLINECOUNTEX="$(grep -cx "$ADDN_HostsDirctive" "$configAddFileORIG")"
-				if [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ -s "$ADDN_HostsFilePath" ]
+
+				directiveCOUNT="$(grep -cx "^$ADDN_HostsDirctive" "$configAddFileORIG")"
+				if [ -s "$ADDN_HostsFilePath" ]
 				then
-					echo "$ADDN_HostsDirctive" >> "$configAddFileORIG"
-					dnsmasqConfigCHANGED=true
+					if [ "$directiveCOUNT" -eq 0 ]
+					then
+						cp -fp "$configAddFileORIG" "$configAddFileTEMP"
+						{
+						   echo "$theCommenTagStr"
+						   if [ -n "$addDomainNameDirective" ] && \
+						      ! grep -q "^${addDomainNameDirective}$" "$configAddFileTEMP"
+						   then echo "$addDomainNameDirective"
+						   fi
+						   if [ -n "$addLocalDomainDirctive" ] && \
+						      ! grep -q "^${addLocalDomainDirctive}$" "$configAddFileTEMP"
+						   then echo "$addLocalDomainDirctive"
+						   fi
+						   if [ -n "$addExpandHostsDirctive" ] && \
+						      ! grep -wq "^$addExpandHostsDirctive" "$configAddFileTEMP"
+						   then echo "$addExpandHostsDirctive"
+						   fi
+						   if [ -n "$addLocalizeQueries" ] && \
+						      ! grep -wq "^$addLocalizeQueries" "$configAddFileTEMP"
+						   then echo "$addLocalizeQueries"
+						   fi
+						   echo "$ADDN_HostsDirctive"
+						} >> "$configAddFileORIG"
+						rm -f "$configAddFileTEMP"
+						dnsmasqConfigCHANGED=true
+					elif grep -q "^$theCommenTagStr" "$configAddFileORIG"
+                    then
+						if [ -n "$addDomainNameDirective" ] && \
+						   ! grep -q "^${addDomainNameDirective}$" "$configAddFileORIG"
+						then
+							dnsmasqConfigCHANGED=true
+							sed -i "/^${theCommenTagStr}/a $addDomainNameDirective" "$configAddFileORIG"
+						fi
+						if [ -n "$addLocalDomainDirctive" ] && \
+						   ! grep -q "^${addLocalDomainDirctive}$" "$configAddFileORIG"
+						then
+							dnsmasqConfigCHANGED=true
+							sed -i "/^${theCommenTagStr}/a $addLocalDomainDirctive" "$configAddFileORIG"
+						fi
+						if [ -n "$addExpandHostsDirctive" ] && \
+						   ! grep -wq "^$addExpandHostsDirctive" "$configAddFileORIG"
+						then
+							dnsmasqConfigCHANGED=true
+							sed -i "/^${theCommenTagStr}/a $addExpandHostsDirctive" "$configAddFileORIG"
+						fi
+						if [ -n "$addLocalizeQueries" ] && \
+						   ! grep -wq "^$addLocalizeQueries" "$configAddFileORIG"
+						then
+							dnsmasqConfigCHANGED=true
+							sed -i "/^${theCommenTagStr}/a $addLocalizeQueries" "$configAddFileORIG"
+						fi
+					fi
 				fi
 
 				#---------------------------------------------------------------------------#
 				theCommenTagStr="# $DHCP_HostsComntTag"
-				STARTUPLINECOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
-				if [ "$STARTUPLINECOUNT" -gt 0 ]
+				commentCOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
+				if [ "$commentCOUNT" -gt 0 ]
 				then
 					sed -i -e "/${theCommenTagStr}/d" "$configAddFileORIG"
 				fi
 				theCommenTagStr="#${DHCP_HostsComntTag}#"
-				STARTUPLINECOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
-				STARTUPLINECOUNTEX="$(grep -cx "$DHCP_HostsDirctive" "$configAddFileORIG")"
-				if [ "$STARTUPLINECOUNT" -gt 1 ] || \
-				   { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; } || \
-				   { [ ! -s "$DHCP_HostsFilePath" ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; }
+				commentCOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
+				directiveCOUNT="$(grep -cx "^$DHCP_HostsDirctive" "$configAddFileORIG")"
+				if [ "$commentCOUNT" -gt 1 ] || \
+				   { [ "$directiveCOUNT" -eq 0 ] && [ "$commentCOUNT" -gt 0 ] ; } || \
+				   { [ ! -s "$DHCP_HostsFilePath" ] && [ "$commentCOUNT" -gt 0 ] ; } || \
+                   { [ ! -s "$DHCP_HostsFilePath" ] && [ "$directiveCOUNT" -gt 0 ] ; }
 				then
 					sed -i -e "/${theCommenTagStr}/d" "$configAddFileORIG"
+					sed -i -e "\\~^${DHCP_HostsDirctive}.*~d" "$configAddFileORIG"
 				fi
-				STARTUPLINECOUNTEX="$(grep -cx "$DHCP_HostsDirctive" "$configAddFileORIG")"
-				if [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ -s "$DHCP_HostsFilePath" ]
+
+				directiveCOUNT="$(grep -cx "^$DHCP_HostsDirctive" "$configAddFileORIG")"
+				if [ "$directiveCOUNT" -eq 0 ] && [ -s "$DHCP_HostsFilePath" ]
 				then
-					echo "$DHCP_HostsDirctive" >> "$configAddFileORIG"
+					{
+					   echo "#${DHCP_HostsComntTag}#"
+					   echo "$DHCP_HostsDirctive" 
+					} >> "$configAddFileORIG"
 					dnsmasqConfigCHANGED=true
 				fi
 
 				#---------------------------------------------------------------------------#
 				theCommenTagStr="# $DHCP_OptnsComntTag"
-				STARTUPLINECOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
-				if [ "$STARTUPLINECOUNT" -gt 0 ]
+				commentCOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
+				if [ "$commentCOUNT" -gt 0 ]
 				then
 					sed -i -e "/${theCommenTagStr}/d" "$configAddFileORIG"
 				fi
 				theCommenTagStr="#${DHCP_OptnsComntTag}#"
-				STARTUPLINECOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
-				STARTUPLINECOUNTEX="$(grep -cx "$DHCP_OptnsDirctive" "$configAddFileORIG")"
-				if [ "$STARTUPLINECOUNT" -gt 1 ] || \
-				   { [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; } || \
-				   { [ ! -s "$DHCP_OptnsFilePath" ] && [ "$STARTUPLINECOUNT" -gt 0 ] ; }
+				commentCOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
+				directiveCOUNT="$(grep -cx "^$DHCP_OptnsDirctive" "$configAddFileORIG")"
+				if [ "$commentCOUNT" -gt 1 ] || \
+				   { [ "$directiveCOUNT" -eq 0 ] && [ "$commentCOUNT" -gt 0 ] ; } || \
+				   { [ ! -s "$DHCP_OptnsFilePath" ] && [ "$commentCOUNT" -gt 0 ] ; } || \
+				   { [ ! -s "$DHCP_OptnsFilePath" ] && [ "$directiveCOUNT" -gt 0 ] ; }
 				then
 					sed -i -e "/${theCommenTagStr}/d" "$configAddFileORIG"
+					sed -i -e "\\~^${DHCP_OptnsDirctive}.*~d" "$configAddFileORIG"
 				fi
-				STARTUPLINECOUNTEX="$(grep -cx "$DHCP_OptnsDirctive" "$configAddFileORIG")"
-				if [ "$STARTUPLINECOUNTEX" -eq 0 ] && [ -s "$DHCP_OptnsFilePath" ]
+
+				directiveCOUNT="$(grep -cx "^$DHCP_OptnsDirctive" "$configAddFileORIG")"
+				if [ "$directiveCOUNT" -eq 0 ] && [ -s "$DHCP_OptnsFilePath" ]
 				then
-					echo "$DHCP_OptnsDirctive" >> "$configAddFileORIG"
+					{
+					   echo "#${DHCP_OptnsComntTag}#"
+					   echo "$DHCP_OptnsDirctive" 
+					} >> "$configAddFileORIG"
 					dnsmasqConfigCHANGED=true
 				fi
 				#---------------------------------------------------------------------------#
 				if [ ! -s "$configAddFileORIG" ] || \
-				   ! diff -q "$configAddFileTEMP" "$configAddFileORIG" >/dev/null 2>&1
+				   ! diff -q "$configAddFilePREV" "$configAddFileORIG" >/dev/null 2>&1
 				then
 					dnsmasqConfigCHANGED=true
 				fi
 				[ -s "$configAddFileORIG" ] && \
 				mv -f "$configAddFileORIG" "$configAddFilePath" 2>/dev/null
-				rm -f "$configAddFileTEMP" "$configAddFileORIG"
+				rm -f "$configAddFilePREV" "$configAddFileORIG"
 			else
 				{
-				   [ -s "$ADDN_HostsFilePath" ] && echo "$ADDN_HostsDirctive"
-				   [ -s "$DHCP_HostsFilePath" ] && echo "$DHCP_HostsDirctive"
-				   [ -s "$DHCP_OptnsFilePath" ] && echo "$DHCP_OptnsDirctive"
+				   if [ -s "$ADDN_HostsFilePath" ]
+				   then
+				       echo "#${ADDN_HostsComntTag}#"
+					   if [ -n "$addDomainNameDirective" ]
+					   then echo "$addDomainNameDirective"
+					   fi
+					   if [ -n "$addLocalDomainDirctive" ]
+					   then echo "$addLocalDomainDirctive"
+					   fi
+					   if [ -n "$addExpandHostsDirctive" ]
+					   then echo "$addExpandHostsDirctive"
+					   fi
+					   if [ -n "$addLocalizeQueries" ]
+					   then echo "$addLocalizeQueries"
+					   fi
+				       echo "$ADDN_HostsDirctive"
+				   fi
+				   if [ -s "$DHCP_HostsFilePath" ]
+				   then
+				       echo "#${DHCP_HostsComntTag}#"
+				       echo "$DHCP_HostsDirctive"
+				   fi
+				   if [ -s "$DHCP_OptnsFilePath" ]
+				   then
+				       echo "#${DHCP_OptnsComntTag}#"
+				       echo "$DHCP_OptnsDirctive"
+				   fi
 				} > "$configAddFilePath"
 				if [ -s "$configAddFilePath" ]
 				then 
@@ -1718,51 +1940,74 @@ Auto_DNSMASQ_Handler()
 			if [ -s "$configAddFileORIG" ]
 			then
 				theCommenTagStr="#${ADDN_HostsComntTag}#"
-				STARTUPLINECOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
-				if [ "$STARTUPLINECOUNT" -gt 0 ]
+				commentCOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
+				if [ "$commentCOUNT" -gt 0 ]
 				then
 					sed -i -e "/${theCommenTagStr}/d" "$configAddFileORIG"
 					dnsmasqConfigCHANGED=true
 				fi
 				theCommenTagStr="# $ADDN_HostsComntTag"
-				STARTUPLINECOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
-				if [ "$STARTUPLINECOUNT" -gt 0 ]
+				commentCOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
+				if [ "$commentCOUNT" -gt 0 ]
 				then
 					sed -i -e "/${theCommenTagStr}/d" "$configAddFileORIG"
+					dnsmasqConfigCHANGED=true
+				fi
+
+				directiveCOUNT="$(grep -c "^$ADDN_HostsDirctive" "$configAddFileORIG")"
+				if [ "$directiveCOUNT" -gt 0 ]
+				then
+					sed -i -e "\\~^${ADDN_HostsDirctive}.*~d" "$configAddFileORIG"
 					dnsmasqConfigCHANGED=true
 				fi
 
 				#-------------------------------------------------------------------------#
 				theCommenTagStr="#${DHCP_HostsComntTag}#"
-				STARTUPLINECOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
-				if [ "$STARTUPLINECOUNT" -gt 0 ]
+				commentCOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
+				if [ "$commentCOUNT" -gt 0 ]
 				then
 					sed -i -e "/${theCommenTagStr}/d" "$configAddFileORIG"
 					dnsmasqConfigCHANGED=true
 				fi
 				theCommenTagStr="# $DHCP_HostsComntTag"
-				STARTUPLINECOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
-				if [ "$STARTUPLINECOUNT" -gt 0 ]
+				commentCOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
+				if [ "$commentCOUNT" -gt 0 ]
 				then
 					sed -i -e "/${theCommenTagStr}/d" "$configAddFileORIG"
 					dnsmasqConfigCHANGED=true
 				fi
 
+				directiveCOUNT="$(grep -c "^$DHCP_HostsDirctive" "$configAddFileORIG")"
+				if [ "$directiveCOUNT" -gt 0 ]
+				then
+					sed -i -e "\\~^${DHCP_HostsDirctive}.*~d" "$configAddFileORIG"
+					dnsmasqConfigCHANGED=true
+				fi
+
 				#-------------------------------------------------------------------------#
 				theCommenTagStr="#${DHCP_OptnsComntTag}#"
-				STARTUPLINECOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
-				if [ "$STARTUPLINECOUNT" -gt 0 ]
+				commentCOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
+				if [ "$commentCOUNT" -gt 0 ]
 				then
 					sed -i -e "/${theCommenTagStr}/d" "$configAddFileORIG"
 					dnsmasqConfigCHANGED=true
 				fi
 				theCommenTagStr="# $DHCP_OptnsComntTag"
-				STARTUPLINECOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
-				if [ "$STARTUPLINECOUNT" -gt 0 ]
+				commentCOUNT="$(grep -c "$theCommenTagStr" "$configAddFileORIG")"
+				if [ "$commentCOUNT" -gt 0 ]
 				then
 					sed -i -e "/${theCommenTagStr}/d" "$configAddFileORIG"
 					dnsmasqConfigCHANGED=true
 				fi
+
+				directiveCOUNT="$(grep -c "^$DHCP_OptnsDirctive" "$configAddFileORIG")"
+				if [ "$directiveCOUNT" -gt 0 ]
+				then
+					sed -i -e "\\~^${DHCP_OptnsDirctive}.*~d" "$configAddFileORIG"
+					dnsmasqConfigCHANGED=true
+				fi
+
+				#-------------------------------------------------------------------------#
 				[ -s "$configAddFileORIG" ] && \
 				mv -f "$configAddFileORIG" "$configAddFilePath" 2>/dev/null
 				rm -f "$configAddFileORIG"
@@ -1780,18 +2025,53 @@ _SetUp_DNSMasqConfigAddFiles_()
     if [ "$fwInstalledBaseVers" -lt 3006 ]
     then return
     fi
-    local configAddRegExp  configAddFPath  theFName
+    local configAddRegExp  configAddFPath  configFName
+    local hostsnAddRegExp="addn-hosts=${SCRIPT_DIR}/.hostnames_"
+    local domainOptRegExp=""  localxDomainOpt=""
+
+    if [ -n "$LAN_DomainName" ]
+    then
+        localxDomainOpt="local=/${LAN_DomainName}/"
+        domainOptRegExp="domain=${LAN_DomainName}[[:blank:]]*"
+    fi
 
     configAddRegExp="${JFFS_Configs_Dir}/dnsmasq-*.conf.add"
     for configAddFPath in $(ls -1 $configAddRegExp 2>/dev/null)
     do
-        theFName="$(basename "$configAddFPath")"
-        if ! echo "$theFName" | grep -qE '^dnsmasq-[1-9]+[0-9]?.conf.add'
+        configFName="$(basename "$configAddFPath")"
+        if [ ! -s "$configAddFPath" ] || \
+           ! echo "$configFName" | grep -qE '^dnsmasq-[1-9][0-9]?[.]conf[.]add'
         then continue
         fi
+
+        if grep -qE "^domain=.+" "$configAddFPath" && \
+           { [ -z "$LAN_DomainName" ] || \
+             ! grep -qE "^$domainOptRegExp" "$configAddFPath"
+           }
+        then sed -i "/^domain=.*/d" "$configAddFPath"
+        fi
+
+        if grep -qE "^local=/.+" "$configAddFPath" && \
+           { [ -z "$LAN_DomainName" ] || \
+             ! grep -qE "^$localxDomainOpt" "$configAddFPath"
+           }
+        then sed -i "/^local=.*/d" "$configAddFPath"
+        fi
+
+        if grep -qw "^expand-hosts" "$configAddFPath" && \
+           { [ -z "$LAN_DomainName" ] || \
+             ! grep -qE "^${hostsnAddRegExp}.+" "$configAddFPath"
+           }
+        then sed -i "/^expand-hosts/d" "$configAddFPath"
+        fi
+
+        if grep -qw "^localise-queries" "$configAddFPath" && \
+           ! grep -qE "^${hostsnAddRegExp}.+" "$configAddFPath"
+        then sed -i "/^localise-queries/d" "$configAddFPath"
+        fi
+
         [ -s "$configAddFPath" ] && \
         mv -f "$configAddFPath" "${configAddFPath}.ORIG.BKUP"
-        rm -f "$configAddFPath"
     done
 }
 
@@ -1806,6 +2086,13 @@ _CleanUp_DNSMasqConfigFiles_()
     local gnInfoStr  gnListOfIFaces=""  gnIFaceName
     local staticAddRegExp  optionAddRegExp  hostsnAddRegExp
     local confAddFBKUP  configFName  configAddFile  configAddPrefix
+    local domainOptRegExp=""  localxDomainOpt=""
+
+    if [ -n "$LAN_DomainName" ]
+    then
+        localxDomainOpt="local=/${LAN_DomainName}/"
+        domainOptRegExp="domain=${LAN_DomainName}[[:blank:]]*"
+    fi
 
     configAddPrefix="${JFFS_Configs_Dir}/dnsmasq-"
     hostsnAddRegExp="addn-hosts=${SCRIPT_DIR}/.hostnames_"
@@ -1818,26 +2105,62 @@ _CleanUp_DNSMasqConfigFiles_()
            [ "$(_GetFileSizeBytes_ "$1")" -ge 3 ]
         then
             mv -f "$1" "$configAddFile"
+            return 0
         fi
         rm -f "$1"
+    }
+
+    ## Remove unused YazDHCP custom directives ##
+    _RemoveUnusedDirectives_()
+    {
+        [ ! -s "$1" ] && return 0
+        sed -i "\\~^${hostsnAddRegExp}.*~d" "$1"
+        sed -i "\\~^${staticAddRegExp}.*~d" "$1"
+        sed -i "\\~^${optionAddRegExp}.*~d" "$1"
+        sed -i "/#${SCRIPT_NAME}_hostnames_.*#/d" "$1"
+        sed -i "/#${SCRIPT_NAME}_staticlist_.*#/d" "$1"
+        sed -i "/#${SCRIPT_NAME}_optionslist_.*#/d" "$1"
+
+        if grep -qE "^domain=.+" "$1" && \
+           { [ -z "$LAN_DomainName" ] || \
+             ! grep -qE "^$domainOptRegExp" "$1"
+           }
+        then sed -i "/^domain=.*/d" "$1"
+        fi
+
+        if grep -qE "^local=/.+" "$1" && \
+           { [ -z "$LAN_DomainName" ] || \
+             ! grep -qE "^$localxDomainOpt" "$1"
+           }
+        then sed -i "/^local=.*/d" "$1"
+        fi
+
+        if grep -qw "^expand-hosts" "$1" && \
+           { [ -z "$LAN_DomainName" ] || \
+             ! grep -qE "^${hostsnAddRegExp}.+" "$1"
+           }
+        then sed -i "/^expand-hosts/d" "$1"
+        fi
+
+        if grep -qw "^localise-queries" "$1" && \
+           ! grep -qE "^${hostsnAddRegExp}.+" "$1"
+        then sed -i "/^localise-queries/d" "$1"
+        fi
     }
 
     for confAddFBKUP in $(ls -1 ${configAddPrefix}*.conf.add.ORIG.BKUP 2>/dev/null)
     do
         configFName="$(basename "$confAddFBKUP")"
-        if ! echo "$configFName" | grep -qE '^dnsmasq-[1-9]+[0-9]?.conf.add.ORIG.BKUP'
+        if ! echo "$configFName" | grep -qE '^dnsmasq-[1-9][0-9]?[.]conf[.]add[.]ORIG[.]BKUP'
         then continue
         fi
-        configAddFile="$(echo "$confAddFBKUP" | grep -oE "${configAddPrefix}.*.conf.add")"
-        if ! grep -qE "^($staticAddRegExp|$optionAddRegExp|$hostsnAddRegExp).*" "$confAddFBKUP"
+        configAddFile="$(echo "$confAddFBKUP" | grep -oE "${configAddPrefix}.+[.]conf[.]add")"
+        if ! grep -qE "^($hostsnAddRegExp|$staticAddRegExp|$optionAddRegExp).+" "$confAddFBKUP"
         then
             _MoveOrDeleteFile_ "$confAddFBKUP"
             continue
         fi
-        ## Remove unused YazDHCP custom lines ##
-        sed -i "\\~^${hostsnAddRegExp}.*~d" "$confAddFBKUP"
-        sed -i "\\~^${staticAddRegExp}.*~d" "$confAddFBKUP"
-        sed -i "\\~^${optionAddRegExp}.*~d" "$confAddFBKUP"
+        _RemoveUnusedDirectives_ "$confAddFBKUP"
         _MoveOrDeleteFile_ "$confAddFBKUP"
         dnsmasqConfigCHANGED=true
     done
@@ -1851,41 +2174,36 @@ _CleanUp_DNSMasqConfigFiles_()
     for configFPATH in $(ls -1 /etc/dnsmasq-*.conf 2>/dev/null)
     do
         configFName="$(basename "$configFPATH")"
-        if ! echo "$configFName" | grep -qE '^dnsmasq-[1-9]+[0-9]?.conf'
+        if ! echo "$configFName" | grep -qE '^dnsmasq-[1-9][0-9]?[.]conf'
         then continue
         fi
         configAddFile="${JFFS_Configs_Dir}/${configFName}.add"
         if [ ! -s "$configAddFile" ] || \
-           ! grep -qE "^($staticAddRegExp|$optionAddRegExp|$hostsnAddRegExp).*" "$configAddFile"
+           ! grep -qE "^($hostsnAddRegExp|$staticAddRegExp|$optionAddRegExp).+" "$configAddFile"
         then
-            ## Remove unused YazDHCP custom lines ##
-            sed -i "\\~^${hostsnAddRegExp}.*~d" "$configFPATH"
-            sed -i "\\~^${staticAddRegExp}.*~d" "$configFPATH"
-            sed -i "\\~^${optionAddRegExp}.*~d" "$configFPATH"
+            _RemoveUnusedDirectives_ "$configFPATH"
             continue
         fi
+
         isConfigAddFileOK=false
         if [ -n "$gnListOfIFaces" ]
         then
             for gnIFaceName in $gnListOfIFaces
             do
-                if grep -qE "^($staticAddRegExp|$optionAddRegExp|$hostsnAddRegExp)$gnIFaceName #" "$configAddFile"
+                if grep -qE "^($hostsnAddRegExp|$staticAddRegExp|$optionAddRegExp)${gnIFaceName}$" "$configAddFile"
                 then
                     isConfigAddFileOK=true ; break
                 fi
             done
         fi
         "$isConfigAddFileOK" && continue
-        ## Remove unused YazDHCP custom lines ##
-        sed -i "\\~^${hostsnAddRegExp}.*~d" "$configFPATH"
-        sed -i "\\~^${staticAddRegExp}.*~d" "$configFPATH"
-        sed -i "\\~^${optionAddRegExp}.*~d" "$configFPATH"
+        _RemoveUnusedDirectives_ "$configFPATH"
         dnsmasqConfigCHANGED=true
     done
 }
 
 ##----------------------------------------##
-## Modified by Martinski W. [2025-Nov-07] ##
+## Modified by Martinski W. [2026-Sep-12] ##
 ##----------------------------------------##
 Auto_DNSMASQ()
 {
@@ -1895,10 +2213,14 @@ Auto_DNSMASQ()
 	local doIFaceAction  doIFaceDel
 	local gnInfoStr  gnListOfIFaces  gnIFaceVarStr
 	local gnIFaceName  gnNetwrkTagID  gnNetIndexNum
-	local configAddFilePath  dnsmasqConfigCHANGED  dnsmasqRESTART
+	local theConfigFilePath  configAddFilePath
+    local dnsmasqConfigCHANGED  dnsmasqRESTART
 	local ADDN_HostsComntTag  ADDN_HostsFilePath  ADDN_HostsDirctive
 	local DHCP_HostsComntTag  DHCP_HostsFilePath  DHCP_HostsDirctive
 	local DHCP_OptnsComntTag  DHCP_OptnsFilePath  DHCP_OptnsDirctive
+    local localDomainDirctive  domainNameDirective  expandHostsDirctive
+    local addLocalDomainDirctive  addDomainNameDirective  addExpandHostsDirctive
+    local localizeQueriesOptn  addLocalizeQueries
 
 	if [ $# -gt 1 ] && [ "$2" = "true" ]
 	then dnsmasqRESTART=true
@@ -1925,35 +2247,65 @@ Auto_DNSMASQ()
 	then doIFaceAction=delete
 	fi
 
+    #-----------------------#
+    # DomainName Directives #
+    #-----------------------#
+    localizeQueriesOptn="" ; addLocalizeQueries=""
+    expandHostsDirctive="" ; addExpandHostsDirctive=""
+    domainNameDirective="" ; addDomainNameDirective=""
+    localDomainDirctive="" ; addLocalDomainDirctive=""
+
 	#----------#
 	# Main LAN #
 	#----------#
+    theConfigFilePath="/etc/dnsmasq.conf"
 	configAddFilePath="${JFFS_Configs_Dir}/dnsmasq.conf.add"
+    ADDN_HostsFilePath="$SCRIPT_DIR/.hostnames"
+    DHCP_HostsFilePath="$SCRIPT_DIR/.staticlist"
+    DHCP_OptnsFilePath="$SCRIPT_DIR/.optionslist"
+
+    #-----------------------#
+    # DomainName Directives #
+    #-----------------------#
+    if [ -s "$ADDN_HostsFilePath" ]
+    then localizeQueriesOptn="localise-queries"
+    fi
+    if [ -n "$localizeQueriesOptn" ] && \
+       {
+          { [ -s "$theConfigFilePath" ] && \
+            grep -wq "^$localizeQueriesOptn" "$theConfigFilePath"
+          } || \
+          { [ -s "$configAddFilePath" ] && \
+            grep -wq "^$localizeQueriesOptn" "$configAddFilePath"
+          }
+       }
+    then addLocalizeQueries=""
+    else addLocalizeQueries="$localizeQueriesOptn"
+    fi
 
 	#----------------#
 	# DHCP Hostnames #
 	#----------------#
-	ADDN_HostsFilePath="$SCRIPT_DIR/.hostnames"
 	ADDN_HostsComntTag="${SCRIPT_NAME}_hostnames"
-	ADDN_HostsDirctive="addn-hosts=$ADDN_HostsFilePath #${ADDN_HostsComntTag}#"
+	ADDN_HostsDirctive="addn-hosts=$ADDN_HostsFilePath"
 	if "$doIFaceDel"
 	then rm -f "$ADDN_HostsFilePath"
 	fi
+
 	#-----------------------------------------#
 	# DHCP Hosts with IP Address Reservations #
 	#-----------------------------------------#
-	DHCP_HostsFilePath="$SCRIPT_DIR/.staticlist"
 	DHCP_HostsComntTag="${SCRIPT_NAME}_staticlist"
-	DHCP_HostsDirctive="dhcp-hostsfile=$DHCP_HostsFilePath #${DHCP_HostsComntTag}#"
+	DHCP_HostsDirctive="dhcp-hostsfile=$DHCP_HostsFilePath"
 	if "$doIFaceDel"
 	then rm -f "$DHCP_HostsFilePath"
 	fi
+
 	#--------------#
 	# DHCP Options #
 	#--------------#
-	DHCP_OptnsFilePath="$SCRIPT_DIR/.optionslist"
 	DHCP_OptnsComntTag="${SCRIPT_NAME}_optionslist"
-	DHCP_OptnsDirctive="dhcp-optsfile=$DHCP_OptnsFilePath #${DHCP_OptnsComntTag}#"
+	DHCP_OptnsDirctive="dhcp-optsfile=$DHCP_OptnsFilePath"
 	if "$doIFaceDel"
 	then rm -f "$DHCP_OptnsFilePath"
 	fi
@@ -1969,6 +2321,21 @@ Auto_DNSMASQ()
 		_Restart_DNSMASQ_
 		return 0
 	fi
+
+    #-----------------------#
+    # DomainName Directives #
+    #-----------------------#
+    if [ -z "$LAN_DomainName" ]
+    then
+        expandHostsDirctive=""
+        domainNameDirective=""
+        localDomainDirctive=""
+    else
+        expandHostsDirctive="expand-hosts"
+        domainNameDirective="domain=$LAN_DomainName"
+        localDomainDirctive="local=/${LAN_DomainName}/"
+    fi
+    localizeQueriesOptn=""
 
 	_SetUp_DNSMasqConfigAddFiles_
 
@@ -2014,32 +2381,97 @@ Auto_DNSMASQ()
 			rm -f "$ADDN_HostsFilePath" "$DHCP_HostsFilePath" "$DHCP_OptnsFilePath"
 			continue
 		fi
+        theConfigFilePath="/etc/dnsmasq-${gnNetIndexNum}.conf"
 		configAddFilePath="${JFFS_Configs_Dir}/dnsmasq-${gnNetIndexNum}.conf.add"
+
+        #-----------------------#
+        # DomainName Directives #
+        #-----------------------#
+        if [ -s "$ADDN_HostsFilePath" ]
+        then localizeQueriesOptn="localise-queries"
+        fi
+
+        if [ -n "$localDomainDirctive" ] && \
+           {
+              { [ -s "$theConfigFilePath" ] && \
+                grep -q "^$localDomainDirctive" "$theConfigFilePath" 
+              } || \
+              { [ -s "$configAddFilePath" ] && \
+                grep -q "^$localDomainDirctive" "$configAddFilePath"
+              }
+           }
+        then addLocalDomainDirctive=""
+        else addLocalDomainDirctive="$localDomainDirctive"
+        fi
+
+        if [ -n "$domainNameDirective" ] && \
+           {
+              { [ -s "$theConfigFilePath" ] && \
+                grep -q "^$domainNameDirective" "$theConfigFilePath"
+              } || \
+              { [ -s "$configAddFilePath" ] && \
+                grep -q "^$domainNameDirective" "$configAddFilePath"
+              }
+           }
+        then addDomainNameDirective=""
+        else addDomainNameDirective="$domainNameDirective"
+        fi
+
+        if [ -n "$expandHostsDirctive" ] && \
+           {
+              { [ -s "$theConfigFilePath" ] && \
+                grep -wq "^$expandHostsDirctive" "$theConfigFilePath"
+              } || \
+              { [ -s "$configAddFilePath" ] && \
+                grep -wq "^$expandHostsDirctive" "$configAddFilePath"
+              }
+           }
+        then addExpandHostsDirctive=""
+        else addExpandHostsDirctive="$expandHostsDirctive"
+        fi
+
+        if [ -n "$localizeQueriesOptn" ] && \
+           {
+              { [ -s "$theConfigFilePath" ] && \
+                grep -wq "^$localizeQueriesOptn" "$theConfigFilePath"
+              } || \
+              { [ -s "$configAddFilePath" ] && \
+                grep -wq "^$localizeQueriesOptn" "$configAddFilePath"
+              }
+           }
+        then addLocalizeQueries=""
+        else addLocalizeQueries="$localizeQueriesOptn"
+        fi
 
 		#----------------#
 		# DHCP Hostnames #
 		#----------------#
 		ADDN_HostsComntTag="${SCRIPT_NAME}_hostnames_$gnIFaceName"
-		ADDN_HostsDirctive="addn-hosts=$ADDN_HostsFilePath #${ADDN_HostsComntTag}#"
+		ADDN_HostsDirctive="addn-hosts=$ADDN_HostsFilePath"
 		if "$doIFaceDel"
 		then rm -f "$ADDN_HostsFilePath"
 		fi
+
 		#-----------------------------------------#
 		# DHCP Hosts with IP Address Reservations #
 		#-----------------------------------------#
 		DHCP_HostsComntTag="${SCRIPT_NAME}_staticlist_$gnIFaceName"
-		DHCP_HostsDirctive="dhcp-hostsfile=$DHCP_HostsFilePath #${DHCP_HostsComntTag}#"
+		DHCP_HostsDirctive="dhcp-hostsfile=$DHCP_HostsFilePath"
 		if "$doIFaceDel"
 		then rm -f "$DHCP_HostsFilePath"
 		fi
+
 		#--------------#
 		# DHCP Options #
 		#--------------#
 		DHCP_OptnsComntTag="${SCRIPT_NAME}_optionslist_$gnIFaceName"
-		DHCP_OptnsDirctive="dhcp-optsfile=$DHCP_OptnsFilePath #${DHCP_OptnsComntTag}#"
+		DHCP_OptnsDirctive="dhcp-optsfile=$DHCP_OptnsFilePath"
 		if "$doIFaceDel"
 		then rm -f "$DHCP_OptnsFilePath"
 		fi
+
+        [ -s "${configAddFilePath}.ORIG.BKUP" ] && \
+        rm -f "$configAddFilePath"
 
 		Auto_DNSMASQ_Handler "$doIFaceAction"
 	done
@@ -2099,16 +2531,18 @@ Shortcut_Script()
 {
 	case $1 in
 		create)
-			if [ -d /opt/bin ] && [ ! -f "/opt/bin/$SCRIPT_NAME" ] && [ -f "/jffs/scripts/$SCRIPT_NAME" ]
+			if [ -d /opt/bin ] && \
+			   [ -s "$SCRIPT_FPATH" ] && \
+			   [ ! -f "/opt/bin/$SCRIPT_NAME" ]
 			then
-				ln -s /jffs/scripts/"$SCRIPT_NAME" /opt/bin
-				chmod 0755 /opt/bin/"$SCRIPT_NAME"
+				ln -s "$SCRIPT_FPATH" /opt/bin
+				chmod 755 "/opt/bin/$SCRIPT_NAME"
 			fi
 		;;
 		delete)
 			if [ -f "/opt/bin/$SCRIPT_NAME" ]
 			then
-				rm -f /opt/bin/"$SCRIPT_NAME"
+				rm -f "/opt/bin/$SCRIPT_NAME"
 			fi
 		;;
 	esac
@@ -2234,7 +2668,7 @@ _NVRAM_IconsSaveKeyValue_()
        then NVRAM_SavedOK=true ; fi
    fi
 
-   theKeyValue="$(nvram get "$NVRAM_ClientsKeyName")"
+   theKeyValue="$(_NVRAM_Get_ "$NVRAM_ClientsKeyName")"
    if [ -n "$theKeyValue" ]
    then
        if ! echo "$theKeyValue" | grep -qE "^<.*"
@@ -2264,7 +2698,7 @@ _NVRAM_IconsRestoreKeyValue_()
    if [ -f "$NVRAM_ClientsKeyVARsaved" ]
    then
       theKeyValueSaved="$(cat "$NVRAM_ClientsKeyVARsaved")"
-      if [ "$(nvram get "$NVRAM_ClientsKeyName")" != "$theKeyValueSaved" ]
+      if [ "$(_NVRAM_Get_ "$NVRAM_ClientsKeyName")" != "$theKeyValueSaved" ]
       then
           nvram set ${NVRAM_ClientsKeyName}="$theKeyValueSaved"
           NVRAM_RestoredOK=true
@@ -3094,7 +3528,7 @@ CheckAgainstNVRAMvar()
     local MACx_Addrs  theRegExp2
 
     if [ ! -s /jffs/nvram/dhcp_staticlist ]
-    then theKeyVal="$(nvram get dhcp_staticlist)"
+    then theKeyVal="$(_NVRAM_Get_ dhcp_staticlist)"
     else theKeyVal="$(cat /jffs/nvram/dhcp_staticlist)"
     fi
     if [ -z "$theKeyVal" ]
@@ -3244,7 +3678,7 @@ _Export_NVRAM_DHCP_Assignments_3004_()
 		echo >> "$1"
 	fi
 
-	nvramKeyVal="$(nvram get dhcp_staticlist)"
+	nvramKeyVal="$(_NVRAM_Get_ dhcp_staticlist)"
 	if [ -n "$nvramKeyVal" ]
 	then
 		echo "$nvramKeyVal" | sed 's/</\n/g;s/>/|/g;s/<//g' | sed '/^$/d' > "$1"
@@ -3321,7 +3755,7 @@ _Export_NVRAM_DHCP_Assignments_3006_()
 	for nvramVarKeyStr in $dhcpNVRAMvarKeyList
 	do
 		nvramVarKey="$(echo "$nvramVarKeyStr" | cut -d'=' -f1)"
-		nvramKeyVal="$(nvram get "$nvramVarKey")"
+		nvramKeyVal="$(_NVRAM_Get_ "$nvramVarKey")"
 		if [ -n "$nvramKeyVal" ]
 		then
 			echo "$nvramKeyVal" > "$SCRIPT_DIR/.nvram_dhcp_$nvramVarKey"
@@ -3350,7 +3784,7 @@ _Export_DHCP_NVRAM_OLD_FW_Versions_()
 				Clear_Lock
 				return 1
 			fi
-		elif [ "$(nvram get dhcp_hostnames | wc -m)" -le 1 ]
+		elif [ "$(_NVRAM_Get_ dhcp_hostnames | wc -m)" -le 1 ]
 		then
 			Print_Output true "DHCP hostnames NOT exported from NVRAM, no data found" "$PASS"
 			Clear_Lock
@@ -3361,13 +3795,13 @@ _Export_DHCP_NVRAM_OLD_FW_Versions_()
 		then
 			sed 's/</\n/g;s/>/ /g;s/<//g' /jffs/nvram/dhcp_staticlist | sed '/^$/d' > /tmp/yazdhcp-ips.tmp
 		else
-			nvram get dhcp_staticlist | sed 's/</\n/g;s/>/ /g;s/<//g'| sed '/^$/d' > /tmp/yazdhcp-ips.tmp
+			_NVRAM_Get_ dhcp_staticlist | sed 's/</\n/g;s/>/ /g;s/<//g'| sed '/^$/d' > /tmp/yazdhcp-ips.tmp
 		fi
 
 		if [ -f /jffs/nvram/dhcp_hostnames ]; then
 			HOSTNAME_LIST=$(sed 's/>undefined//' /jffs/nvram/dhcp_hostnames)
 		else
-			HOSTNAME_LIST=$(nvram get dhcp_hostnames | sed 's/>undefined//')
+			HOSTNAME_LIST=$(_NVRAM_Get_ dhcp_hostnames | sed 's/>undefined//')
 		fi
 
 		OLDIFS=$IFS
@@ -3413,7 +3847,7 @@ _Export_DHCP_NVRAM_OLD_FW_Versions_()
 			cp -f /jffs/nvram/dhcp_hostnames "$SCRIPT_DIR/.nvram_jffs_dhcp_hostnames"
 			rm -f /jffs/nvram/dhcp_hostnames
 		fi
-		nvram get dhcp_hostnames > "$SCRIPT_DIR/.nvram_dhcp_hostnames"
+		_NVRAM_Get_ dhcp_hostnames > "$SCRIPT_DIR/.nvram_dhcp_hostnames"
 		nvram unset dhcp_hostnames
 	fi
 }
@@ -3549,12 +3983,15 @@ _CIDR_IPaddrBlockContainsIPaddr_()
 
    ## If FIRST octet does NOT match, the IP address is NOT included ##
    if [ "${subnetIPaddrs%%.*}" -ne "${cidrNetIPaddr%%.*}" ]
-   then return 1 ; fi
+   then return 1
+   fi
 
-   awk -v cidr="$1" -v theIP="$2" '
-      function ip2int(s, a){split(s,a,".");return a[1]*16777216+a[2]*65536+a[3]*256+a[4]}
+   awk -v aCIDR="$1" -v theIP="$2" '
+      function ip2int(ipa, oct)
+      { split(ipa,oct,".")
+        return oct[1]*16777216 + oct[2]*65536 + oct[3]*256 + oct[4] }
       BEGIN{
-         split(cidr,c,"/"); netIP=c[1]; bits=c[2]+0
+         split(aCIDR,array,"/"); netIP=array[1]; bits=array[2]+0
          mask = bits==0 ? 0 : and(0xffffffff, lshift(0xffffffff,32-bits))
          exit and(ip2int(theIP),mask)==and(ip2int(netIP),mask) ? 0 : 1
       }'
@@ -3566,7 +4003,7 @@ _CIDR_IPaddrBlockContainsIPaddr_()
 Update_Hostnames_MainLAN()
 {
 	local theMACaddr  theIPaddr4  theHostName  theDNSaddr
-	local theMACaddrTag  theIPaddr3
+	local theMACaddrTag  theIPaddr3  sameSubnet
 	local LAN_IPaddr3="$(echo "$mainLAN_IPaddr" | cut -d'.' -f1-3)"
 
 	while IFS=',' read -r theMACaddr theIPaddr4 theHostName theDNSaddr
@@ -3578,18 +4015,24 @@ Update_Hostnames_MainLAN()
 		then continue
 		fi
 		theMACaddrTag="#${theMACaddr}#"
-
-		if [ -s "$hostNamesFilePATH" ] && \
-		   grep -q "$theMACaddrTag" "$hostNamesFilePATH"
-		then continue  #Prevent Duplicates#
-		fi
-
 		theIPaddr3="$(echo "$theIPaddr4" | cut -d'.' -f1-3)"
+
 		if [ "$theIPaddr3" = "$LAN_IPaddr3" ] || \
 		   _CIDR_IPaddrBlockContainsIPaddr_ "$mainNET_CIDR" "$theIPaddr4"
-		then
-			echo "$theIPaddr4 $theHostName  $theMACaddrTag" >> "$hostNamesFilePATH"
+		then sameSubnet=true
+		else sameSubnet=false
 		fi
+		[ "$sameSubnet" = "false" ] && continue
+
+		## Check for duplicate "MAC" or "Hostname" in MAIN LAN subnet ##
+		if [ -s "$hostNamesFilePATH" ] && \
+		   { grep -iq "$theMACaddrTag" "$hostNamesFilePATH" || \
+		     grep -iq "\b${theHostName}\b" "$hostNamesFilePATH"
+		   }
+		then continue  #Avoid duplicates in MAIN LAN subnet#
+		fi
+
+		echo "$theIPaddr4 $theHostName  $theMACaddrTag" >> "$hostNamesFilePATH"
 	done < "$SCRIPT_CONF"
 }
 
@@ -3599,10 +4042,11 @@ Update_Hostnames_MainLAN()
 Update_Hostnames_GuestNet()
 {
 	local gnExistingMD5  gnUpdatedMD5  theIPaddr3
-	local gnInfoStr  gnIFaceVarStr  gnListOfIFaces=""
+	local gnInfoStr  gnIFaceVarStr  gnListOfIFaces=""  sameSubnet
 	local gnIFaceName  gnStartIPaddr4  gnStartIPaddr3  gnSubnet_CIDR
 	local theMACaddr  theIPaddr4  theHostName  theDNSaddr  gnIFaceDelEntry
 	local hostNamesFileGNET  hostNamesFileBKUP  theMACaddrTag  retCode
+	DUPL_HOST_CHECK=false  ##**TBD**##
 
 	gnInfoStr="$(_Get_GuestNetwork_SubnetInfo_)"
 	if [ "${#gnInfoStr}" -gt 0 ]
@@ -3640,6 +4084,7 @@ Update_Hostnames_GuestNet()
 			rm -f "$hostNamesFileGNET" "$hostNamesFileBKUP"
 			continue
 		fi
+
 		if [ -s "$hostNamesFileGNET" ]
 		then
 			gnExistingMD5="$(md5sum "$hostNamesFileGNET" | awk '{print $1}')"
@@ -3661,19 +4106,33 @@ Update_Hostnames_GuestNet()
 			then continue
 			fi
 			theMACaddrTag="#${theMACaddr}#"
-
-			if [ -s "$hostNamesFilePATH" ]        && \
-			   [ "$fwInstalledBaseVers" -lt 3006 ] && \
-			   grep -q "$theMACaddrTag" "$hostNamesFilePATH"
-			then continue  #Prevent Duplicates#
-			fi
-
 			theIPaddr3="$(echo "$theIPaddr4" | cut -d'.' -f1-3)"
+
 			if [ "$theIPaddr3" = "$gnStartIPaddr3" ] || \
 			   _CIDR_IPaddrBlockContainsIPaddr_ "$gnSubnet_CIDR" "$theIPaddr4"
-			then
-				echo "$theIPaddr4 $theHostName  $theMACaddrTag" >> "$hostNamesFileGNET"
+			then sameSubnet=true
+			else sameSubnet=false
 			fi
+			[ "$sameSubnet" = "false" ] && continue
+
+			## Check for duplicate "MAC" or "Hostname" in MAIN LAN subnet ##
+			if [ "$fwInstalledBaseVers" -lt 3006 ] && \
+			   "$DUPL_HOST_CHECK" && [ -s "$hostNamesFilePATH" ] && \
+			   { grep -iq "$theMACaddrTag" "$hostNamesFilePATH" && \
+			     grep -iq "\b${theHostName}\b" "$hostNamesFilePATH"
+			   }
+			then continue  #Avoid duplicates in MAIN LAN subnet???#
+			fi
+
+			## Check for duplicate "MAC" or "Hostname" in GUEST subnet ##
+			if [ -s "$hostNamesFileGNET" ] && \
+			   { grep -iq "$theMACaddrTag" "$hostNamesFileGNET" || \
+			     grep -iq "\b${theHostName}\b" "$hostNamesFileGNET"
+			   }
+			then continue  #Avoid duplicates in GUEST subnet#
+			fi
+
+			echo "$theIPaddr4 $theHostName  $theMACaddrTag" >> "$hostNamesFileGNET"
 		done < "$SCRIPT_CONF"
 
 		if [ "$(_GetFileSizeBytes_ "$hostNamesFileGNET")" -ge 3 ]
@@ -4362,7 +4821,7 @@ _Check_ActiveGuestNetwork_SubnetInfo_()
        _Init_ActiveGuestNetwork_SubnetInfo_
        if "$inStartupMode" || "$wifiRestarted"
        then  ## Try again after some timeout ##
-           if [ -s /jffs/scripts/YazFi ]
+           if [ -s "${JFFS_SCRIPTS}/YazFi" ]
            then sleepSecs=60
            elif [ "$fwInstalledBaseVers" -lt 3006 ]
            then sleepSecs=30
@@ -4431,14 +4890,14 @@ _Check_ActiveGuestNetwork_SubnetInfo_()
        printf ' [];\n' >> "$guestNetInfoJSfilePath"
        _Set_FoundActiveGuestNetworks_ false
        _AllowGuestNetwork_IP_Reservations_ reset false
-       Print_Output logOnly "Active Guest Network Interfaces *NOT* found." "$ERR"
+       Print_Output LogOnly "Active Guest Network Interfaces *NOT* found." "$ERR"
    else
        printf '\n];\n' >> "$guestNetInfoJSfilePath"
        if ! "$(_Is_DHCP_Static_IPs_Enabled_)" || \
           ! "$(_AllowGuestNetwork_IP_Reservations_ check)"
        then
            _AllowGuestNetwork_IP_Reservations_ disable false
-          Print_Output logOnly "Guest Network IP Address Reservations *NOT* allowed." "$ERR"
+          Print_Output LogOnly "Guest Network IP Address Reservations *NOT* allowed." "$ERR"
        fi
    fi
    _Update_GuestNetCheck_Status_ DONE
@@ -4634,7 +5093,7 @@ Menu_Install()
 		Print_Output true "Requirements for $SCRIPT_NAME not met, please see above for the reason(s)" "$CRIT"
 		PressEnter
 		Clear_Lock
-		rm -f "/jffs/scripts/$SCRIPT_NAME" 2>/dev/null
+		rm -f "$SCRIPT_FPATH"
 		exit 1
 	fi
 
@@ -4644,9 +5103,9 @@ Menu_Install()
 	Create_Symlinks
 
 	httpStr="https"
-	portStr=":$(nvram get https_lanport)"
+	portStr=":$(_NVRAM_Get_ https_lanport)"
 
-	if [ "$(nvram get http_enable)" -eq 0 ]
+	if [ "$(_NVRAM_Get_ http_enable)" -eq 0 ]
 	then
 		httpStr="http"
 		portStr=""
@@ -4664,8 +5123,8 @@ Menu_Install()
 		esac
 	done
 
-	Update_File "$LAN_DHCP_SERVER_WEBPAGE"
 	Update_File shared-jy.tar.gz
+	Update_File "$LAN_DHCP_SERVER_WEBPAGE"
 	Auto_Startup create 2>/dev/null
 	Auto_ServiceEvent create 2>/dev/null
 	Shortcut_Script create
@@ -4708,13 +5167,13 @@ NTP_Ready()
 {
 	local theSleepDelay=15  ntpMaxWaitSecs=600  ntpWaitSecs
 
-	[ "$(nvram get ntp_ready)" -eq 1 ] && return 0
+	[ "$(_NVRAM_Get_ ntp_ready)" -eq 1 ] && return 0
 
 	Check_Lock
 	ntpWaitSecs=0
 	Print_Output true "Waiting for NTP to sync..." "$WARN"
 
-	while [ "$(nvram get ntp_ready)" -eq 0 ] && [ "$ntpWaitSecs" -lt "$ntpMaxWaitSecs" ]
+	while [ "$(_NVRAM_Get_ ntp_ready)" -eq 0 ] && [ "$ntpWaitSecs" -lt "$ntpMaxWaitSecs" ]
 	do
 		sleep "$theSleepDelay"
 		ntpWaitSecs="$((ntpWaitSecs + theSleepDelay))"
@@ -4724,7 +5183,7 @@ NTP_Ready()
 		fi
 	done
 
-	if [ "$(nvram get ntp_ready)" -eq 1 ]
+	if [ "$(_NVRAM_Get_ ntp_ready)" -eq 1 ]
 	then
 		Print_Output true "NTP has synced [$ntpWaitSecs secs]. $SCRIPT_NAME will now continue." "$PASS"
 	else
@@ -4818,7 +5277,7 @@ Menu_Uninstall()
 	local max7daySecs=604800
 	local doCommitNVRAM=false
 
-	if [ "$(nvram get "$DHCP_LEASE_KEYN")" -gt "$max7daySecs" ]
+	if [ "$(_NVRAM_Get_ "$DHCP_LEASE_KEYN")" -gt "$max7daySecs" ]
 	then
 		nvram set ${DHCP_LEASE_KEYN}="$max7daySecs"
 		doCommitNVRAM=true
@@ -4838,8 +5297,8 @@ Menu_Uninstall()
 	esac
 
 	Set_Version_Custom_Settings delete
-	rm -rf "$SCRIPT_WEB_DIR" 2>/dev/null
-	rm -f "/jffs/scripts/$SCRIPT_NAME" 2>/dev/null
+	rm -fr "$SCRIPT_WEB_DIR" 2>/dev/null
+	rm -f "$SCRIPT_FPATH"
 	Clear_Lock
 	Print_Output true "Uninstall completed" "$PASS"
 
@@ -4857,15 +5316,18 @@ Check_Requirements()
 {
 	local CHECKSFAILED=false
 
-	if [ "$(nvram get jffs2_scripts)" -ne 1 ]
+	if [ "$(_NVRAM_Get_ jffs2_scripts)" -ne 1 ]
 	then
 		nvram set jffs2_scripts=1
 		nvram commit
 		Print_Output true "Custom JFFS Scripts enabled" "$WARN"
 	fi
 
-	if ! Firmware_Version_Check || \
-	   [ "$(FirmwareVersionNum "$fwInstalledBranchVer")" -lt "$(FirmwareVersionNum '3004.386.4')" ]
+	if ! Firmware_Version_Check
+	then CHECKSFAILED=true
+	fi
+
+	if [ "$(FirmwareVersionNum "$fwInstalledBranchVer")" -lt "$(FirmwareVersionNum '3004.386.4')" ]
 	then
 		CHECKSFAILED=true
 		Print_Output true "Unsupported firmware version detected" "$ERR"
@@ -4996,7 +5458,7 @@ case "$1" in
 		then
 			NTP_Ready
 			sleepSecs=30
-			if [ -s /jffs/scripts/YazFi ]
+			if [ -s "${JFFS_SCRIPTS}/YazFi" ]
 			then sleepSecs=60
 			elif [ "$fwInstalledBaseVers" -lt 3006 ]
 			then sleepSecs=30
