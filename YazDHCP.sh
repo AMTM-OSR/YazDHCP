@@ -31,7 +31,7 @@
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
 readonly SCRIPT_VERSION="v1.2.7"
-readonly SCRIPT_VERSTAG="26101101"
+readonly SCRIPT_VERSTAG="26101103"
 SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/${SCRIPT_NAME}/$SCRIPT_BRANCH"
 
@@ -4066,7 +4066,7 @@ Update_Hostnames_MainLAN()
 		## Check for duplicate "MAC" or "Hostname" in MAIN LAN subnet ##
 		if [ -s "$hostNamesFileUPDT" ] && \
 		   { grep -iq "$theMACaddrTag" "$hostNamesFileUPDT" || \
-		     grep -iq "\b${theHostName}\b" "$hostNamesFileUPDT"
+		     grep -iqE "^$IPv4privtx_RegEx ${theHostName}[[:blank:]]+" "$hostNamesFileUPDT"
 		   }
 		then continue  #Avoid duplicates in MAIN LAN subnet#
 		fi
@@ -4161,7 +4161,7 @@ Update_Hostnames_GuestNet()
 			if [ "$fwInstalledBaseVers" -lt 3006 ] && \
 			   "$DUPL_HOST_CHECK" && [ -s "$hostNamesFilePATH" ] && \
 			   { grep -iq "$theMACaddrTag" "$hostNamesFilePATH" && \
-			     grep -iq "\b${theHostName}\b" "$hostNamesFilePATH"
+			     grep -iqE "^$IPv4privtx_RegEx ${theHostName}[[:blank:]]+" "$hostNamesFilePATH"
 			   }
 			then continue  #Avoid duplicates in MAIN LAN subnet#
 			fi
