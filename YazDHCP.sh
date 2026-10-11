@@ -1156,9 +1156,15 @@ Update_File()
 				Print_Output true "Download failed for shared archive file [$1]" "$ERR"
 				return 1
 			fi
-			mv -f "$tempFileMD5" "${SHARED_DIR}/${1}.md5"
-			chmod 644 "${SHARED_DIR}/${1}.md5"
-			tar -xzf "${SHARED_DIR}/$1" -C "$SHARED_DIR"
+			if tar -xzf "${SHARED_DIR}/$1" -C "$SHARED_DIR"
+			then
+				mv -f "$tempFileMD5" "${SHARED_DIR}/${1}.md5"
+				chmod 644 "${SHARED_DIR}/${1}.md5"
+			else
+				rm -f "$tempFileMD5" "${SHARED_DIR}/$1"
+				Print_Output true "Download failed for shared archive file [$1]" "$ERR"
+				return 1
+			fi
 			rm -f "${SHARED_DIR}/$1"
 			Print_Output true "New version of $1 was downloaded" "$PASS"
 		else
