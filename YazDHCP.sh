@@ -13,7 +13,7 @@
 ##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2026-Oct-10
+# Last Modified: 2026-Oct-11
 #---------------------------------------------------------
 
 #############################################
@@ -31,7 +31,7 @@
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
 readonly SCRIPT_VERSION="v1.2.7"
-readonly SCRIPT_VERSTAG="26101023"
+readonly SCRIPT_VERSTAG="26101101"
 SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/${SCRIPT_NAME}/$SCRIPT_BRANCH"
 
@@ -4599,7 +4599,7 @@ Update_OptionsList_GuestNet()
 		if [ -s "$optionsListFileGNETP" ] && \
 		   [ "$fwInstalledBaseVers" -lt 3006 ]
 		then
-			cat "$optionsListFileGNETP" >> "$optionsListFileGUPDT"
+			cat "$optionsListFileGNETP" >> "$optionsListFileUPDT"
 		fi
 		rm -f "$optionsListFileGUPDT"
 		"$delBkupCopy" && rm -f "$optionsListFileGBKUP"
