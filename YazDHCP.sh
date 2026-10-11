@@ -946,7 +946,8 @@ Download_File()
       [ -z "$httpStatusSTR" ] && [ -s "$tempFilePathDL" ]
    then
        mv -f "$tempFilePathDL" "$theDestFPath"
-       dos2unix "$theDestFPath" ; chmod 644 "$theDestFPath"
+       [ "${theDestFName##*.}" != 'gz' ] && dos2unix "$theDestFPath"
+       chmod 644 "$theDestFPath"
    else
        if [ "$curlRetCode" -eq 0 ] && [ -n "$httpStatusSTR" ]
        then
