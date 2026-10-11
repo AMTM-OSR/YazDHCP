@@ -56,10 +56,10 @@ thead.collapsible-jquery {
 <script>
 
 /**----------------------------**/
-/** Last Modified: 2026-Sep-04 **/
+/** Last Modified: 2026-Oct-10 **/
 /**----------------------------**/
 
-const actionScriptPrefix = "start_YazDHCP";
+const actionScriptPrefix = 'start_YazDHCP';
 
 /**----------------------------------------------**/
 /** Added/Modified by Martinski W. [2023-Jan-28] **/
@@ -2123,27 +2123,34 @@ function applyRule()
 		document.getElementById('amng_custom').value = JSON.stringify(custom_settings);
 
 		let customStrLEN = document.getElementById('amng_custom').value.length;
-		if (customStrLEN > totalMaxLength)
+		if (customStrLEN >= totalMaxLength)
 		{
 			alert("Settings for all addons ["+ customStrLEN +"] exceeds 8KB limit, cannot save!");
 			return false;
 		}
 
 		// Only restart the whole network if needed //
+		var action_script_value;
 		if ((document.form.dhcp_wins_x.value != dhcp_wins_ori) ||
 			(document.form.dhcp_dns1_x.value != dhcp_dns1_ori) ||
 			(document.form.dhcp_gateway_x.value != dhcp_gateway_ori) ||
 			(document.form.lan_domain.value != lan_domain_ori))
 		{
-			document.form.action_script.value = "restart_net_and_phy";
+			action_script_value = "restart_net_and_phy";
 		}
 		else
 		{
-			document.form.action_script.value = "restart_dnsmasq";
+			action_script_value = "restart_dnsmasq";
 			document.form.action_wait.value = 5;
 		}
 
-		var action_script_tmp = "start_YazDHCP;" + document.form.action_script.value;
+		/**----------------------------------------------**/
+		/** Do NOT include 'restart_dnsmasq' action here **/
+		/**----------------------------------------------**/
+		var action_script_tmp = actionScriptPrefix + 'config';
+
+		if (action_script_value !== 'restart_dnsmasq')
+		{ action_script_tmp = action_script_tmp + '_restartNet;' + action_script_value; }
 		document.form.action_script.value = action_script_tmp;
 
 		if(vpn_fusion_support){

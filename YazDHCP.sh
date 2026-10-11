@@ -13,7 +13,7 @@
 ##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2026-Sep-12
+# Last Modified: 2026-Oct-10
 #---------------------------------------------------------
 
 #############################################
@@ -31,7 +31,7 @@
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
 readonly SCRIPT_VERSION="v1.2.7"
-readonly SCRIPT_VERSTAG="26091223"
+readonly SCRIPT_VERSTAG="26101023"
 SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/${SCRIPT_NAME}/$SCRIPT_BRANCH"
 
@@ -828,17 +828,17 @@ Conf_FromSettings()
 			then RESTART_DNSMASQ=true
 			else RESTART_DNSMASQ="$DO_NVRAM_COMMIT"
 			fi
-			Process_DHCP_Clients
 
 			Check_DHCP_LeaseTime
 			if "$DO_NVRAM_COMMIT" ; then nvram commit ; fi
+			Process_DHCP_Clients
 
 			Print_Output true "Merge of updated DHCP client information from WebUI completed successfully" "$PASS"
 
 			if "$RESTART_DNSMASQ"
 			then
-				Print_Output true "Restarting dnsmasq for new DHCP settings to take effect." "$PASS"
-				## Delay restarting dnsmasq until the one from WebGUI is completed ##
+				Print_Output true "Restarting dnsmasq for new DHCP settings to take effect." "$WARN"
+				## Restart dnsmasq with a delay to allow any previous call to finish ##
 				(sleep 3 ; service restart_dnsmasq >/dev/null 2>&1) &
 			fi
 		else
@@ -1257,7 +1257,10 @@ _Get_ActiveGuestNetwork_VirtualInterfaces_()
 ##-------------------------------------##
 _Init_GuestNetworkAllow_VarsConfig_()
 {
-   echo "${dhcpGuestNetAllowVarKey}=false" > "$dhcpGuestNetConfigFPath"
+    {
+       echo "LAN_Domain='TBD'"
+       echo "${dhcpGuestNetAllowVarKey}=false"
+    } > "$dhcpGuestNetConfigFPath"
 }
 
 ##-------------------------------------##
@@ -1473,7 +1476,7 @@ _Get_DHCP_NetworkTagStr_()
 
     for dnsmasqFile in $(ls -1 $dnsmasqFileStr 2>/dev/null)
     do
-        dhcpNoIFaceID="$(grep -E "^no-dhcp-interface=$ifaceNameStr" "$dnsmasqFile")"
+        dhcpNoIFaceID="$(grep -E "^no-dhcp-interface=${ifaceNameStr}\b" "$dnsmasqFile")"
         dhcpRangeStr1="$(grep -E "^dhcp-range=.*,${ipAddr3str}[.].*," "$dnsmasqFile")"
         dhcpRangeStr2="$(grep -E "^dhcp-range=(set:)?${ifaceNameStr},${ipAddr3str}[.].*," "$dnsmasqFile")"
         dhcpOptionStr1="$(grep -E "^dhcp-option=.*,(3|option:router),${ipAddr4str}([,].*)?$" "$dnsmasqFile")"
@@ -1587,10 +1590,38 @@ _Reset_GuestNetwork_SubnetInfo_()
 _Get_GuestNetwork_SubnetInfo_()
 {
     if [ ! -s "$dhcpGuestNetConfigFPath" ] || \
-       ! grep -qE "^GNIFACE_${guestNetIFaces0RegExp}=" "$dhcpGuestNetConfigFPath"
+       ! grep -qE "^GNIFACE_${guestNetIFaces0RegExp}=.+" "$dhcpGuestNetConfigFPath"
     then echo ; return 1
     fi
-    grep -E "^GNIFACE_${guestNetIFaces0RegExp}=.*" "$dhcpGuestNetConfigFPath"
+    grep -E "^GNIFACE_${guestNetIFaces0RegExp}=.+" "$dhcpGuestNetConfigFPath"
+}
+
+##-------------------------------------##
+## Added by Martinski W. [2026-Oct-10] ##
+##-------------------------------------##
+_GetNetwork_LAN_DomainInfo_()
+{
+    if [ ! -s "$dhcpGuestNetConfigFPath" ] || \
+       ! grep -qE '^LAN_Domain=.+' "$dhcpGuestNetConfigFPath"
+    then echo ; return 1
+    fi
+    grep -E '^LAN_Domain=.+' "$dhcpGuestNetConfigFPath" | cut -d'=' -f2- | sed "s/['\"]//g"
+}
+
+##-------------------------------------##
+## Added by Martinski W. [2026-Oct-10] ##
+##-------------------------------------##
+_SetNetwork_LAN_DomainInfo_()
+{
+    if [ ! -s "$dhcpGuestNetConfigFPath" ]
+    then
+        echo "LAN_Domain='${LAN_DomainName}'" > "$dhcpGuestNetConfigFPath"
+    elif ! grep -qE '^LAN_Domain=.*' "$dhcpGuestNetConfigFPath"
+    then
+        sed -i "1 i LAN_Domain='${LAN_DomainName}'" "$dhcpGuestNetConfigFPath"
+    else
+        sed -i "s/^LAN_Domain=.*/LAN_Domain='${LAN_DomainName}'/" "$dhcpGuestNetConfigFPath"
+    fi
 }
 
 ##-------------------------------------##
@@ -2235,6 +2266,7 @@ Auto_DNSMASQ()
 		then
 			Print_Output true "Restarting dnsmasq for new DHCP settings to take effect." "$WARN"
 			service restart_dnsmasq >/dev/null 2>&1
+			RESTART_DNSMASQ=false
 		fi
 	}
 
@@ -4025,14 +4057,14 @@ Update_Hostnames_MainLAN()
 		[ "$sameSubnet" = "false" ] && continue
 
 		## Check for duplicate "MAC" or "Hostname" in MAIN LAN subnet ##
-		if [ -s "$hostNamesFilePATH" ] && \
-		   { grep -iq "$theMACaddrTag" "$hostNamesFilePATH" || \
-		     grep -iq "\b${theHostName}\b" "$hostNamesFilePATH"
+		if [ -s "$hostNamesFileUPDT" ] && \
+		   { grep -iq "$theMACaddrTag" "$hostNamesFileUPDT" || \
+		     grep -iq "\b${theHostName}\b" "$hostNamesFileUPDT"
 		   }
 		then continue  #Avoid duplicates in MAIN LAN subnet#
 		fi
 
-		echo "$theIPaddr4 $theHostName  $theMACaddrTag" >> "$hostNamesFilePATH"
+		echo "$theIPaddr4 $theHostName  $theMACaddrTag" >> "$hostNamesFileUPDT"
 	done < "$SCRIPT_CONF"
 }
 
@@ -4045,7 +4077,8 @@ Update_Hostnames_GuestNet()
 	local gnInfoStr  gnIFaceVarStr  gnListOfIFaces=""  sameSubnet
 	local gnIFaceName  gnStartIPaddr4  gnStartIPaddr3  gnSubnet_CIDR
 	local theMACaddr  theIPaddr4  theHostName  theDNSaddr  gnIFaceDelEntry
-	local hostNamesFileGNET  hostNamesFileBKUP  theMACaddrTag  retCode
+	local hostNamesFileGNETP  hostNamesFileGNAME  hostNamesFileGBKUP
+	local hostNamesFileGUPDT  theMACaddrTag  retCode
 	DUPL_HOST_CHECK=false  ##**TBD**##
 
 	gnInfoStr="$(_Get_GuestNetwork_SubnetInfo_)"
@@ -4068,12 +4101,14 @@ Update_Hostnames_GuestNet()
 	for gnIFaceName in $gnListOfIFaces
 	do
 		gnExistingMD5=""  gnUpdatedMD5=""
-		hostNamesFileGNET="${hostNamesFilePATH}_${gnIFaceName}"
-		hostNamesFileBKUP="${hostNamesFileGNET}.BKUP"
+		hostNamesFileGNETP="${hostNamesFilePATH}_$gnIFaceName"
+		hostNamesFileGNAME="${hostNamesFileNAME}_$gnIFaceName"
+		hostNamesFileGBKUP="${TEMP_DIR}/${SCRIPT_NAME}_${hostNamesFileGNAME}.BKUP.$$"
+		hostNamesFileGUPDT="${TEMP_DIR}/${SCRIPT_NAME}_${hostNamesFileGNAME}.UPDT.$$"
 
 		if "$gnIFaceDelEntry"
 		then
-			if [ -s "$hostNamesFileGNET" ]
+			if [ -s "$hostNamesFileGNETP" ]
 			then
 				retCode=0
 				Print_Output true "DHCP hostname list for Guest Network [$gnIFaceName] was removed" "$WARN" oneline
@@ -4081,16 +4116,16 @@ Update_Hostnames_GuestNet()
 				then RESTART_DNSMASQ=true
 				fi
 			fi
-			rm -f "$hostNamesFileGNET" "$hostNamesFileBKUP"
+			rm -f "$hostNamesFileGNETP" "$hostNamesFileGBKUP" "$hostNamesFileGUPDT"
 			continue
 		fi
 
-		if [ -s "$hostNamesFileGNET" ]
+		if [ -s "$hostNamesFileGNETP" ]
 		then
-			gnExistingMD5="$(md5sum "$hostNamesFileGNET" | awk '{print $1}')"
-			mv -f "$hostNamesFileGNET" "$hostNamesFileBKUP"
+			gnExistingMD5="$(md5sum "$hostNamesFileGNETP" | awk '{print $1}')"
+			cp -fp "$hostNamesFileGNETP" "$hostNamesFileGBKUP"
 		fi
-		printf '' > "$hostNamesFileGNET"
+		printf '' > "$hostNamesFileGUPDT"
 
 		gnIFaceVarStr="GNIFACE_${gnIFaceName}="
 		gnStartIPaddr4="$(echo "$gnInfoStr" | grep -E "^${gnIFaceVarStr}.*" | cut -d'=' -f2 | cut -d',' -f1)"
@@ -4121,34 +4156,35 @@ Update_Hostnames_GuestNet()
 			   { grep -iq "$theMACaddrTag" "$hostNamesFilePATH" && \
 			     grep -iq "\b${theHostName}\b" "$hostNamesFilePATH"
 			   }
-			then continue  #Avoid duplicates in MAIN LAN subnet???#
+			then continue  #Avoid duplicates in MAIN LAN subnet#
 			fi
 
 			## Check for duplicate "MAC" or "Hostname" in GUEST subnet ##
-			if [ -s "$hostNamesFileGNET" ] && \
-			   { grep -iq "$theMACaddrTag" "$hostNamesFileGNET" || \
-			     grep -iq "\b${theHostName}\b" "$hostNamesFileGNET"
+			if [ -s "$hostNamesFileGUPDT" ] && \
+			   { grep -iq "$theMACaddrTag" "$hostNamesFileGUPDT" || \
+			     grep -iq "\b${theHostName}\b" "$hostNamesFileGUPDT"
 			   }
 			then continue  #Avoid duplicates in GUEST subnet#
 			fi
 
-			echo "$theIPaddr4 $theHostName  $theMACaddrTag" >> "$hostNamesFileGNET"
+			echo "$theIPaddr4 $theHostName  $theMACaddrTag" >> "$hostNamesFileGUPDT"
 		done < "$SCRIPT_CONF"
 
-		if [ "$(_GetFileSizeBytes_ "$hostNamesFileGNET")" -ge 3 ]
+		if [ "$(_GetFileSizeBytes_ "$hostNamesFileGUPDT")" -ge 3 ]
 		then
-			gnUpdatedMD5="$(md5sum "$hostNamesFileGNET" | awk '{print $1}')"
+			gnUpdatedMD5="$(md5sum "$hostNamesFileGUPDT" | awk '{print $1}')"
 		fi
 		if [ -n "$gnUpdatedMD5" ] && [ "$gnExistingMD5" != "$gnUpdatedMD5" ]
 		then
 			retCode=0
+			mv -f "$hostNamesFileGUPDT" "$hostNamesFileGNETP"
 			Print_Output true "DHCP hostname list for Guest Network [$gnIFaceName] updated successfully" "$PASS" oneline
 			if [ "$fwInstalledBaseVers" -ge 3006 ]
 			then RESTART_DNSMASQ=true
 			fi
-		elif [ -z "$gnUpdatedMD5" ]
+		elif [ -z "$gnUpdatedMD5" ]  #NO Entries#
 		then
-			if [ -s "$hostNamesFileBKUP" ]
+			if [ -s "$hostNamesFileGBKUP" ]
 			then
 				retCode=0
 				Print_Output true "DHCP hostname list for Guest Network [$gnIFaceName] was removed." "$WARN" oneline
@@ -4157,19 +4193,20 @@ Update_Hostnames_GuestNet()
 				fi
 			fi
 		else
-			if [ -s "$hostNamesFileBKUP" ]
-			then cp -fp "$hostNamesFileBKUP" "$hostNamesFileGNET"
+			if [ "$(_GetFileSizeBytes_ "$hostNamesFileGBKUP")" -ge 3 ]
+			then cp -fp "$hostNamesFileGBKUP" "$hostNamesFileGNETP"
 			fi
 			Print_Output true "DHCP hostname list for Guest Network [$gnIFaceName] remains unchanged" "$PASS" oneline
 		fi
-		if [ -s "$hostNamesFileGNET" ] && \
+		if [ -s "$hostNamesFileGNETP" ] && \
 		   [ "$fwInstalledBaseVers" -lt 3006 ]
 		then
-			cat "$hostNamesFileGNET" >> "$hostNamesFilePATH"
+			cat "$hostNamesFileGNETP" >> "$hostNamesFileUPDT"
 		fi
-		"$delBkupCopy" && rm -f "$hostNamesFileBKUP"
-		if [ "$(_GetFileSizeBytes_ "$hostNamesFileGNET")" -lt 3 ]
-		then rm -f "$hostNamesFileGNET"
+		rm -f "$hostNamesFileGUPDT"
+		"$delBkupCopy" && rm -f "$hostNamesFileGBKUP"
+		if [ "$(_GetFileSizeBytes_ "$hostNamesFileGNETP")" -lt 3 ]
+		then rm -f "$hostNamesFileGNETP"
 		fi
 	done
 
@@ -4231,13 +4268,19 @@ Update_StaticList_MainLAN()
 		else dhcpNetTagStr="set:${dhcpNetwkTagID},"
 		fi
 
+		## Check for duplicate IPv4 address in MAIN LAN subnet ##
+		if [ -s "$staticListFileUPDT" ] && \
+		   grep -q "\b${theIPaddr4}\b" "$staticListFileUPDT"
+		then continue  #Avoid duplicates in MAIN LAN subnet#
+		fi
+
 		theIPaddr3="$(echo "$theIPaddr4" | cut -d'.' -f1-3)"
 		if [ "$theIPaddr3" = "$LAN_IPaddr3" ] || \
 		   _CIDR_IPaddrBlockContainsIPaddr_ "$mainNET_CIDR" "$theIPaddr4"
 		then
 			{
-			    echo "${dhcpNetTagStr}${theMACaddr},set:${theMACaddr},${theIPaddr4}${hostNameEntry}" 
-			} >> "$staticListFilePATH"
+			   echo "${dhcpNetTagStr}${theMACaddr},set:${theMACaddr},${theIPaddr4}${hostNameEntry}"
+			} >> "$staticListFileUPDT"
 		fi
 	done < "$SCRIPT_CONF"
 }
@@ -4252,7 +4295,8 @@ Update_StaticList_GuestNet()
 	local gnIFaceName  gnStartIPaddr4  gnStartIPaddr3  gnSubnet_CIDR
 	local theMACaddr  theIPaddr4  theHostName  theDNSaddr
 	local hostNameEntry  dhcpNetwkTagID  dhcpNetTagStr  retCode
-	local staticListFileGNET  staticListFileBKUP  gnIFaceDelEntry
+	local staticListFileGNETP  staticListFileGNAME  staticListFileGBKUP
+	local staticListFileGUPDT  gnIFaceDelEntry
 
 	gnInfoStr="$(_Get_GuestNetwork_SubnetInfo_)"
 	if [ "${#gnInfoStr}" -gt 0 ]
@@ -4274,12 +4318,14 @@ Update_StaticList_GuestNet()
 	for gnIFaceName in $gnListOfIFaces
 	do
 		gnExistingMD5=""  gnUpdatedMD5=""
-		staticListFileGNET="${staticListFilePATH}_${gnIFaceName}"
-		staticListFileBKUP="${staticListFileGNET}.BKUP"
+		staticListFileGNETP="${staticListFilePATH}_$gnIFaceName"
+		staticListFileGNAME="${staticListFileNAME}_$gnIFaceName"
+		staticListFileGBKUP="${TEMP_DIR}/${SCRIPT_NAME}_${staticListFileGNAME}.BKUP.$$"
+		staticListFileGUPDT="${TEMP_DIR}/${SCRIPT_NAME}_${staticListFileGNAME}.UPDT.$$"
 
 		if "$gnIFaceDelEntry"
 		then
-			if [ -s "$staticListFileGNET" ]
+			if [ -s "$staticListFileGNETP" ]
 			then
 				retCode=0
 				Print_Output true "DHCP IP address reservation list for Guest Network [$gnIFaceName] was removed" "$WARN" oneline
@@ -4287,15 +4333,15 @@ Update_StaticList_GuestNet()
 				then RESTART_DNSMASQ=true
 				fi
 			fi
-			rm -f "$staticListFileGNET" "$staticListFileBKUP"
+			rm -f "$staticListFileGNETP" "$staticListFileGBKUP" "$staticListFileGUPDT"
 			continue
 		fi
-		if [ -s "$staticListFileGNET" ]
+		if [ -s "$staticListFileGNETP" ]
 		then
-			gnExistingMD5="$(md5sum "$staticListFileGNET" | awk '{print $1}')"
-			mv -f "$staticListFileGNET" "$staticListFileBKUP"
+			gnExistingMD5="$(md5sum "$staticListFileGNETP" | awk '{print $1}')"
+			cp -fp "$staticListFileGNETP" "$staticListFileGBKUP"
 		fi
-		printf '' > "$staticListFileGNET"
+		printf '' > "$staticListFileGUPDT"
 
 		gnIFaceVarStr="GNIFACE_${gnIFaceName}="
 		gnStartIPaddr4="$(echo "$gnInfoStr" | grep -E "^${gnIFaceVarStr}.*" | cut -d'=' -f2 | cut -d',' -f1)"
@@ -4326,24 +4372,25 @@ Update_StaticList_GuestNet()
 			then
 				{
 				    echo "${dhcpNetTagStr}${theMACaddr},set:${theMACaddr},${theIPaddr4}${hostNameEntry}" 
-				} >> "$staticListFileGNET"
+				} >> "$staticListFileGUPDT"
 			fi
 		done < "$SCRIPT_CONF"
 
-		if [ "$(_GetFileSizeBytes_ "$staticListFileGNET")" -ge 3 ]
+		if [ "$(_GetFileSizeBytes_ "$staticListFileGUPDT")" -ge 3 ]
 		then
-			gnUpdatedMD5="$(md5sum "$staticListFileGNET" | awk '{print $1}')"
+			gnUpdatedMD5="$(md5sum "$staticListFileGUPDT" | awk '{print $1}')"
 		fi
 		if [ -n "$gnUpdatedMD5" ] && [ "$gnExistingMD5" != "$gnUpdatedMD5" ]
 		then
 			retCode=0
+			mv -f "$staticListFileGUPDT" "$staticListFileGNETP"
 			Print_Output true "DHCP IP address reservation list for Guest Network [$gnIFaceName] updated successfully" "$PASS" oneline
 			if [ "$fwInstalledBaseVers" -ge 3006 ]
 			then RESTART_DNSMASQ=true
 			fi
-		elif [ -z "$gnUpdatedMD5" ]
+		elif [ -z "$gnUpdatedMD5" ]  #NO Entries#
 		then
-			if [ -s "$staticListFileBKUP" ]
+			if [ -s "$staticListFileGBKUP" ]
 			then
 				retCode=0
 				Print_Output true "DHCP IP address reservation list for Guest Network [$gnIFaceName] was removed." "$WARN" oneline
@@ -4352,19 +4399,20 @@ Update_StaticList_GuestNet()
 				fi
 			fi
 		else
-			if [ -s "$staticListFileBKUP" ]
-			then cp -fp "$staticListFileBKUP" "$staticListFileGNET"
+			if [ "$(_GetFileSizeBytes_ "$staticListFileGBKUP")" -ge 3 ]
+			then cp -fp "$staticListFileGBKUP" "$staticListFileGNETP"
 			fi
 			Print_Output true "DHCP IP address reservation list for Guest Network [$gnIFaceName] remains unchanged" "$PASS" oneline
 		fi
-		if [ -s "$staticListFileGNET" ] && \
+		if [ -s "$staticListFileGNETP" ] && \
 		   [ "$fwInstalledBaseVers" -lt 3006 ]
 		then
-			cat "$staticListFileGNET" >> "$staticListFilePATH"
+			cat "$staticListFileGNETP" >> "$staticListFileUPDT"
 		fi
-		"$delBkupCopy" && rm -f "$staticListFileBKUP"
-		if [ "$(_GetFileSizeBytes_ "$staticListFileGNET")" -lt 3 ]
-		then rm -f "$staticListFileGNET"
+		rm -f "$staticListFileGUPDT"
+		"$delBkupCopy" && rm -f "$staticListFileGBKUP"
+		if [ "$(_GetFileSizeBytes_ "$staticListFileGNETP")" -lt 3 ]
+		then rm -f "$staticListFileGNETP"
 		fi
 	done
 
@@ -4427,8 +4475,8 @@ Update_OptionsList_MainLAN()
 		   _CIDR_IPaddrBlockContainsIPaddr_ "$mainNET_CIDR" "$theIPaddr4"
 		then
 			{
-			    echo "${dhcpNetTagStr}tag:${theMACaddr},6,$theDNSaddr" 
-			} >> "$optionsListFilePATH"
+			   echo "${dhcpNetTagStr}tag:${theMACaddr},6,$theDNSaddr"
+			} >> "$optionsListFileUPDT"
 		fi
 	done < "$SCRIPT_CONF"
 }
@@ -4443,7 +4491,8 @@ Update_OptionsList_GuestNet()
 	local gnIFaceName  gnStartIPaddr4  gnStartIPaddr3  gnSubnet_CIDR
 	local theMACaddr  theIPaddr4  theHostName  theDNSaddr
 	local dhcpNetwkTagID  dhcpNetTagStr  gnIFaceDelEntry
-	local optionsListFileGNET  optionsListFileBKUP  retCode
+	local optionsListFileGNETP  optionsListFileGNAME  optionsListFileGBKUP
+	local optionsListFileGUPDT  retCode
 
 	gnInfoStr="$(_Get_GuestNetwork_SubnetInfo_)"
 	if [ "${#gnInfoStr}" -gt 0 ]
@@ -4465,12 +4514,14 @@ Update_OptionsList_GuestNet()
 	for gnIFaceName in $gnListOfIFaces
 	do
 		gnExistingMD5=""  gnUpdatedMD5=""
-		optionsListFileGNET="${optionsListFilePATH}_${gnIFaceName}"
-		optionsListFileBKUP="${optionsListFileGNET}.BKUP"
+		optionsListFileGNETP="${optionsListFilePATH}_$gnIFaceName"
+		optionsListFileGNAME="${optionsListFileNAME}_$gnIFaceName"
+		optionsListFileGBKUP="${TEMP_DIR}/${SCRIPT_NAME}_${optionsListFileGNAME}.BKUP.$$"
+		optionsListFileGUPDT="${TEMP_DIR}/${SCRIPT_NAME}_${optionsListFileGNAME}.UPDT.$$"
 
 		if "$gnIFaceDelEntry"
 		then
-			if [ -s "$optionsListFileGNET" ]
+			if [ -s "$optionsListFileGNETP" ]
 			then
 				retCode=0
 				Print_Output true "DHCP options list for Guest Network [$gnIFaceName] was removed" "$WARN" oneline
@@ -4478,15 +4529,15 @@ Update_OptionsList_GuestNet()
 				then RESTART_DNSMASQ=true
 				fi
 			fi
-			rm -f "$optionsListFileGNET" "$optionsListFileBKUP"
+			rm -f "$optionsListFileGNETP" "$optionsListFileGBKUP" "$optionsListFileGUPDT"
 			continue
 		fi
-		if [ -s "$optionsListFileGNET" ]
+		if [ -s "$optionsListFileGNETP" ]
 		then
-			gnExistingMD5="$(md5sum "$optionsListFileGNET" | awk '{print $1}')"
-			mv -f "$optionsListFileGNET" "$optionsListFileBKUP"
+			gnExistingMD5="$(md5sum "$optionsListFileGNETP" | awk '{print $1}')"
+			cp -fp "$optionsListFileGNETP" "$optionsListFileGBKUP"
 		fi
-		printf '' > "$optionsListFileGNET"
+		printf '' > "$optionsListFileGUPDT"
 
 		gnIFaceVarStr="GNIFACE_${gnIFaceName}="
 		gnStartIPaddr4="$(echo "$gnInfoStr" | grep -E "^${gnIFaceVarStr}.*" | cut -d'=' -f2 | cut -d',' -f1)"
@@ -4513,24 +4564,25 @@ Update_OptionsList_GuestNet()
 			then
 				{
 				    echo "${dhcpNetTagStr}tag:${theMACaddr},6,$theDNSaddr" 
-				} >> "$optionsListFileGNET"
+				} >> "$optionsListFileGUPDT"
 			fi
 		done < "$SCRIPT_CONF"
 
-		if [ "$(_GetFileSizeBytes_ "$optionsListFileGNET")" -ge 3 ]
+		if [ "$(_GetFileSizeBytes_ "$optionsListFileGUPDT")" -ge 3 ]
 		then
-			gnUpdatedMD5="$(md5sum "$optionsListFileGNET" | awk '{print $1}')"
+			gnUpdatedMD5="$(md5sum "$optionsListFileGUPDT" | awk '{print $1}')"
 		fi
 		if [ -n "$gnUpdatedMD5" ] && [ "$gnExistingMD5" != "$gnUpdatedMD5" ]
 		then
 			retCode=0
+			mv -f "$optionsListFileGUPDT" "$optionsListFileGNETP"
 			Print_Output true "DHCP options list for Guest Network [$gnIFaceName] updated successfully" "$PASS" oneline
 			if [ "$fwInstalledBaseVers" -ge 3006 ]
 			then RESTART_DNSMASQ=true
 			fi
 		elif [ -z "$gnUpdatedMD5" ]
 		then
-			if [ -s "$optionsListFileBKUP" ]
+			if [ -s "$optionsListFileGBKUP" ]
 			then
 				retCode=0
 				Print_Output true "DHCP options list for Guest Network [$gnIFaceName] was removed." "$WARN" oneline
@@ -4539,19 +4591,20 @@ Update_OptionsList_GuestNet()
 				fi
 			fi
 		else
-			if [ -s "$optionsListFileBKUP" ]
-			then cp -fp "$optionsListFileBKUP" "$optionsListFileGNET"
+			if [ "$(_GetFileSizeBytes_ "$optionsListFileGBKUP")" -ge 3 ]
+			then cp -fp "$optionsListFileGBKUP" "$optionsListFileGNETP"
 			fi
 			Print_Output true "DHCP options list for Guest Network [$gnIFaceName] remains unchanged" "$PASS" oneline
 		fi
-		if [ -s "$optionsListFileGNET" ] && \
+		if [ -s "$optionsListFileGNETP" ] && \
 		   [ "$fwInstalledBaseVers" -lt 3006 ]
 		then
-			cat "$optionsListFileGNET" >> "$optionsListFilePATH"
+			cat "$optionsListFileGNETP" >> "$optionsListFileGUPDT"
 		fi
-		"$delBkupCopy" && rm -f "$optionsListFileBKUP"
-		if [ "$(_GetFileSizeBytes_ "$optionsListFileGNET")" -lt 3 ]
-		then rm -f "$optionsListFileGNET"
+		rm -f "$optionsListFileGUPDT"
+		"$delBkupCopy" && rm -f "$optionsListFileGBKUP"
+		if [ "$(_GetFileSizeBytes_ "$optionsListFileGNETP")" -lt 3 ]
+		then rm -f "$optionsListFileGNETP"
 		fi
 	done
 
@@ -4591,30 +4644,33 @@ CleanUp_OptionsList_GuestNet()
 Update_Hostnames()
 {
 	local lanExistingMD5=""  lanUpdatedMD5=""  msgTagStr=""
-	local hostNamesFileBKUP="${hostNamesFilePATH}.BKUP"
+	local hostNamesFileBKUP="${TEMP_DIR}/${SCRIPT_NAME}_${hostNamesFileNAME}.BKUP.$$"
+	local hostNamesFileUPDT="${TEMP_DIR}/${SCRIPT_NAME}_${hostNamesFileNAME}.UPDT.$$"
 
 	if [ -s "$hostNamesFilePATH" ]
 	then
 		lanExistingMD5="$(md5sum "$hostNamesFilePATH" | awk '{print $1}')"
-		mv -f "$hostNamesFilePATH" "$hostNamesFileBKUP"
+		cp -fp "$hostNamesFilePATH" "$hostNamesFileBKUP"
 	fi
-	printf '' > "$hostNamesFilePATH"
+	printf '' > "$hostNamesFileUPDT"
 
 	Update_Hostnames_MainLAN
 	Update_Hostnames_GuestNet
+
 	if [ $? -eq 0 ] || "$(_AllowGuestNetwork_IP_Reservations_ check)"
 	then msgTagStr="for main LAN [$mainLAN_IFname] "
 	fi
 
-	if [ "$(_GetFileSizeBytes_ "$hostNamesFilePATH")" -ge 3 ]
+	if [ "$(_GetFileSizeBytes_ "$hostNamesFileUPDT")" -ge 3 ]
 	then
-		lanUpdatedMD5="$(md5sum "$hostNamesFilePATH" | awk '{print $1}')"
+		lanUpdatedMD5="$(md5sum "$hostNamesFileUPDT" | awk '{print $1}')"
 	fi
 	if [ -n "$lanUpdatedMD5" ] && [ "$lanExistingMD5" != "$lanUpdatedMD5" ]
 	then
+		mv -f "$hostNamesFileUPDT" "$hostNamesFilePATH"
 		Print_Output true "DHCP hostname list ${msgTagStr}updated successfully" "$PASS" oneline
 		RESTART_DNSMASQ=true
-	elif [ -n "$lanUpdatedMD5" ]  #NO Change#
+	elif [ -n "$lanUpdatedMD5" ]  #NO Changes#
 	then
 		if [ "$(_GetFileSizeBytes_ "$hostNamesFileBKUP")" -ge 3 ]
 		then cp -fp "$hostNamesFileBKUP" "$hostNamesFilePATH"
@@ -4622,6 +4678,8 @@ Update_Hostnames()
 		"$verboseMode" && \
 		Print_Output true "DHCP hostname list ${msgTagStr}remains unchanged" "$PASS" oneline
 	fi
+
+	rm -f "$hostNamesFileUPDT"
 	"$delBkupCopy" && rm -f "$hostNamesFileBKUP"
 	if [ "$(_GetFileSizeBytes_ "$hostNamesFilePATH")" -lt 3 ]
 	then rm -f "$hostNamesFilePATH"
@@ -4634,30 +4692,33 @@ Update_Hostnames()
 Update_StaticList()
 {
 	local lanExistingMD5=""  lanUpdatedMD5=""  msgTagStr=""
-	local staticListFileBKUP="${staticListFilePATH}.BKUP"
+	local staticListFileBKUP="${TEMP_DIR}/${SCRIPT_NAME}_${staticListFileNAME}.BKUP.$$"
+	local staticListFileUPDT="${TEMP_DIR}/${SCRIPT_NAME}_${staticListFileNAME}.UPDT.$$"
 
 	if [ -s "$staticListFilePATH" ]
 	then
 		lanExistingMD5="$(md5sum "$staticListFilePATH" | awk '{print $1}')"
-		mv -f "$staticListFilePATH" "$staticListFileBKUP"
+		cp -fp "$staticListFilePATH" "$staticListFileBKUP"
 	fi
-	printf '' > "$staticListFilePATH"
+	printf '' > "$staticListFileUPDT"
 
 	Update_StaticList_MainLAN
 	Update_StaticList_GuestNet
+
 	if [ $? -eq 0 ] || "$(_AllowGuestNetwork_IP_Reservations_ check)"
 	then msgTagStr="for main LAN [$mainLAN_IFname] "
 	fi
 
-	if [ "$(_GetFileSizeBytes_ "$staticListFilePATH")" -ge 3 ]
+	if [ "$(_GetFileSizeBytes_ "$staticListFileUPDT")" -ge 3 ]
 	then
-		lanUpdatedMD5="$(md5sum "$staticListFilePATH" | awk '{print $1}')"
+		lanUpdatedMD5="$(md5sum "$staticListFileUPDT" | awk '{print $1}')"
 	fi
 	if [ -n "$lanUpdatedMD5" ] && [ "$lanExistingMD5" != "$lanUpdatedMD5" ]
 	then
+		mv -f "$staticListFileUPDT" "$staticListFilePATH"
 		Print_Output true "DHCP IP address reservation list ${msgTagStr}updated successfully" "$PASS" oneline
 		RESTART_DNSMASQ=true
-	elif [ -n "$lanUpdatedMD5" ]  #NO Change#
+	elif [ -n "$lanUpdatedMD5" ]  #NO Changes#
 	then
 		if [ "$(_GetFileSizeBytes_ "$staticListFileBKUP")" -ge 3 ]
 		then cp -fp "$staticListFileBKUP" "$staticListFilePATH"
@@ -4665,6 +4726,8 @@ Update_StaticList()
 		"$verboseMode" && \
 		Print_Output true "DHCP IP address reservation list ${msgTagStr}remains unchanged" "$PASS" oneline
 	fi
+
+	rm -f "$staticListFileUPDT"
 	"$delBkupCopy" && rm -f "$staticListFileBKUP"
 	if [ "$(_GetFileSizeBytes_ "$staticListFilePATH")" -lt 3 ]
 	then rm -f "$staticListFilePATH"
@@ -4677,30 +4740,33 @@ Update_StaticList()
 Update_OptionsList()
 {
 	local lanExistingMD5=""  lanUpdatedMD5=""  msgTagStr=""
-	local optionsListFileBKUP="${optionsListFilePATH}.BKUP"
+	local optionsListFileBKUP="${TEMP_DIR}/${SCRIPT_NAME}_${optionsListFileNAME}.BKUP.$$"
+	local optionsListFileUPDT="${TEMP_DIR}/${SCRIPT_NAME}_${optionsListFileNAME}.UPDT.$$"
 
 	if [ -s "$optionsListFilePATH" ]
 	then
 		lanExistingMD5="$(md5sum "$optionsListFilePATH" | awk '{print $1}')"
-		mv -f "$optionsListFilePATH" "$optionsListFileBKUP"
+		cp -fp "$optionsListFilePATH" "$optionsListFileBKUP"
 	fi
-	printf '' > "$optionsListFilePATH"
+	printf '' > "$optionsListFileUPDT"
 
 	Update_OptionsList_MainLAN
 	Update_OptionsList_GuestNet
+
 	if [ $? -eq 0 ] || "$(_AllowGuestNetwork_IP_Reservations_ check)"
 	then msgTagStr="for main LAN [$mainLAN_IFname] "
 	fi
 
-	if [ -s "$optionsListFilePATH" ]
+	if [ "$(_GetFileSizeBytes_ "$optionsListFileUPDT")" -ge 3 ]
 	then
-		lanUpdatedMD5="$(md5sum "$optionsListFilePATH" | awk '{print $1}')"
+		lanUpdatedMD5="$(md5sum "$optionsListFileUPDT" | awk '{print $1}')"
 	fi
 	if [ -n "$lanUpdatedMD5" ] && [ "$lanExistingMD5" != "$lanUpdatedMD5" ]
 	then
+		mv -f "$optionsListFileUPDT" "$optionsListFilePATH"
 		Print_Output true "DHCP options list ${msgTagStr}updated successfully" "$PASS" oneline
 		RESTART_DNSMASQ=true
-	elif [ -n "$lanUpdatedMD5" ]  #NO Change#
+	elif [ -n "$lanUpdatedMD5" ]  #NO Changes#
 	then
 		if [ "$(_GetFileSizeBytes_ "$optionsListFileBKUP")" -ge 3 ]
 		then cp -fp "$optionsListFileBKUP" "$optionsListFilePATH"
@@ -4708,6 +4774,8 @@ Update_OptionsList()
 		"$verboseMode" && \
 		Print_Output true "DHCP options list ${msgTagStr}remains unchanged" "$PASS" oneline
 	fi
+
+	rm -f "$optionsListFileUPDT"
 	"$delBkupCopy" && rm -f "$optionsListFileBKUP"
 	if [ "$(_GetFileSizeBytes_ "$optionsListFilePATH")" -lt 3 ]
 	then rm -f "$optionsListFilePATH"
@@ -4719,10 +4787,14 @@ Update_OptionsList()
 ##----------------------------------------##
 Process_DHCP_Clients()
 {
-	local retCode=1  delBkupCopy=true  verboseMode
-	local hostNamesFilePATH="$SCRIPT_DIR/.hostnames"
-	local staticListFilePATH="$SCRIPT_DIR/.staticlist"
-	local optionsListFilePATH="$SCRIPT_DIR/.optionslist"
+	local retCode=1  lanDomainStr
+	local delBkupCopy=true  verboseMode
+	local hostNamesFileNAME='hostnames'
+	local hostNamesFilePATH="${SCRIPT_DIR}/.$hostNamesFileNAME"
+	local staticListFileNAME='staticlist'
+	local staticListFilePATH="${SCRIPT_DIR}/.$staticListFileNAME"
+	local optionsListFileNAME='optionslist'
+	local optionsListFilePATH="${SCRIPT_DIR}/.$optionsListFileNAME"
 
 	if [ $# -gt 0 ] && { [ "$1" = "true" ] || [ "$1" = "false" ] ; }
 	then RESTART_DNSMASQ="$1"
@@ -4737,6 +4809,14 @@ Process_DHCP_Clients()
 		printf '' > "$optionsListFilePATH"
 		Print_Output true "No DHCP client IP address assignments were found." "$WARN"
 		return 1
+	fi
+
+	lanDomainStr="$(_GetNetwork_LAN_DomainInfo_)"
+	if [ "$lanDomainStr" != "$LAN_DomainName" ]
+	then
+		RESTART_DNSMASQ=true
+		_SetNetwork_LAN_DomainInfo_
+		Print_Output true "The router's LAN Domain Name has changed." "$WARN" oneline
 	fi
 
 	verboseMode="${setVerboseMode:=true}"
@@ -5434,6 +5514,9 @@ then
 	exit 0
 fi
 
+##----------------------------------------##
+## Modified by Martinski W. [2026-Oct-10] ##
+##----------------------------------------##
 case "$1" in
 	install)
 		Check_Lock
@@ -5450,9 +5533,6 @@ case "$1" in
 		Menu_Startup "$@"
 		exit 0
 	;;
-	##----------------------------------------##
-	## Modified by Martinski W. [2025-Sep-05] ##
-	##----------------------------------------##
 	service_event)
 		if [ "$2" = "restart" ] && [ "$3" = "wireless" ]
 		then
@@ -5464,7 +5544,7 @@ case "$1" in
 			then sleepSecs=30
 			fi
 			wifiRestarted=true
-			Print_Output true "Wireless restarted. Check for available Guest Networks in $sleepSecs sec." "$PASS"
+			Print_Output true "Wireless was restarted. Check for available Guest Networks in $sleepSecs sec." "$WARN"
 			Check_Lock
 			sleep "$sleepSecs"
 			_Update_GuestNetCheck_Status_ INIT
@@ -5473,10 +5553,22 @@ case "$1" in
 			Clear_Lock
 		elif [ "$2" = "start" ]
 		then
+			if echo "$3" | grep -qE "^${SCRIPT_NAME}config"
+			then
+                Conf_FromSettings
+				if [ "$3" = "${SCRIPT_NAME}config_restartNet" ]
+				then
+					sleepSecs=60
+					Print_Output true "Network was restarted. Check for IP address reservations in $sleepSecs sec." "$WARN"
+					{
+						NTP_Ready
+						sleep "$sleepSecs"
+						exec "$0" processDHCPclients
+					} &
+				fi
+				exit 0
+			fi
 			case "$3" in
-				"$SCRIPT_NAME")
-					Conf_FromSettings
-				;;
 				"${SCRIPT_NAME}backupconfig")
 					BackUpConfigSettings
 				;;
@@ -5513,9 +5605,13 @@ case "$1" in
 		fi
 		exit 0
 	;;
-	##----------------------------------------------##
-	## Added/modified by Martinski W. [2023-Apr-15] ##
-	##----------------------------------------------##
+	processDHCPclients)
+		shift
+		_Update_GuestNetCheck_Status_ INIT
+		_Check_ActiveGuestNetwork_SubnetInfo_
+		Process_DHCP_Clients true
+		exit 0
+	;;
 	backupicons)
 		BackUpUserIconFiles
 		exit 0
