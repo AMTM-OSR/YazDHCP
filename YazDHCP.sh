@@ -31,7 +31,7 @@
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
 readonly SCRIPT_VERSION="v1.2.7"
-readonly SCRIPT_VERSTAG="26101103"
+readonly SCRIPT_VERSTAG="26101104"
 SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/${SCRIPT_NAME}/$SCRIPT_BRANCH"
 
@@ -4191,6 +4191,7 @@ Update_Hostnames_GuestNet()
 			fi
 		elif [ -z "$gnUpdatedMD5" ]  #NO Entries#
 		then
+			printf '' > "$hostNamesFileGNETP"
 			if [ -s "$hostNamesFileGBKUP" ]
 			then
 				retCode=0
@@ -4199,7 +4200,7 @@ Update_Hostnames_GuestNet()
 				then RESTART_DNSMASQ=true
 				fi
 			fi
-		else
+		else   #NO Changes#
 			if [ "$(_GetFileSizeBytes_ "$hostNamesFileGBKUP")" -ge 3 ]
 			then cp -fp "$hostNamesFileGBKUP" "$hostNamesFileGNETP"
 			fi
@@ -4397,6 +4398,7 @@ Update_StaticList_GuestNet()
 			fi
 		elif [ -z "$gnUpdatedMD5" ]  #NO Entries#
 		then
+			printf '' > "$staticListFileGNETP"
 			if [ -s "$staticListFileGBKUP" ]
 			then
 				retCode=0
@@ -4405,7 +4407,7 @@ Update_StaticList_GuestNet()
 				then RESTART_DNSMASQ=true
 				fi
 			fi
-		else
+		else   #NO Changes#
 			if [ "$(_GetFileSizeBytes_ "$staticListFileGBKUP")" -ge 3 ]
 			then cp -fp "$staticListFileGBKUP" "$staticListFileGNETP"
 			fi
@@ -4587,8 +4589,9 @@ Update_OptionsList_GuestNet()
 			if [ "$fwInstalledBaseVers" -ge 3006 ]
 			then RESTART_DNSMASQ=true
 			fi
-		elif [ -z "$gnUpdatedMD5" ]
+		elif [ -z "$gnUpdatedMD5" ]  #NO Entries#
 		then
+			printf '' > "$optionsListFileGNETP"
 			if [ -s "$optionsListFileGBKUP" ]
 			then
 				retCode=0
@@ -4597,7 +4600,7 @@ Update_OptionsList_GuestNet()
 				then RESTART_DNSMASQ=true
 				fi
 			fi
-		else
+		else   #NO Changes#
 			if [ "$(_GetFileSizeBytes_ "$optionsListFileGBKUP")" -ge 3 ]
 			then cp -fp "$optionsListFileGBKUP" "$optionsListFileGNETP"
 			fi
