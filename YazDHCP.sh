@@ -141,6 +141,9 @@ readonly MENU_TREE_JS_FILE="/www/require/modules/menuTree.js"
 readonly LAN_DHCP_SERVER_WEBPAGE="Advanced_DHCP_Content.asp"
 readonly ORIGN_LAN_DHCP_SERVER_PAGE="/www/$LAN_DHCP_SERVER_WEBPAGE"
 readonly MOUNT_LAN_DHCP_SERVER_PAGE="${SCRIPT_DIR}/$LAN_DHCP_SERVER_WEBPAGE"
+readonly NETWORKMAP_JS_NAME="${SCRIPT_NAME}_networkmap.js"
+readonly NETWORKMAP_JS_PATH="${SCRIPT_WEB_DIR}/$NETWORKMAP_JS_NAME"
+readonly NETWORKMAP_PAGES="index.asp device-map/clients.asp"
 readonly webPageLineTabStr="{url: \"${LAN_DHCP_SERVER_WEBPAGE}\", tabName: "
 
 ##----------------------------------------------##
@@ -2541,6 +2544,7 @@ Mount_WebUI()
 		then
 			webUIupdateOK=true
 			Print_Output true "WebUI tab for $SCRIPT_NAME was mounted successfully." "$PASS"
+			Mount_NetworkMap_Label
 			return 0
 		else
 			webUIupdateOK=false
@@ -2552,6 +2556,61 @@ Mount_WebUI()
 		Print_Output true "**ERROR**: WebUI file for $SCRIPT_NAME is NOT found." "$CRIT"
 		return 1
 	fi
+}
+
+# Labels clients with a DHCP reservation as "Manual" in the Network Map #
+Mount_NetworkMap_Label()
+{
+	local page mountedPage
+	local scriptTag="<script src=\"/ext/${SCRIPT_NAME}/${NETWORKMAP_JS_NAME}\"></script>"
+
+	cat > "$NETWORKMAP_JS_PATH" <<'EOF'
+(function() {
+	var gen = window.genClientList;
+	if (!gen) return;
+
+	var reserved = {};
+	fetch("/ext/YazDHCP/DHCP_clients.htm", { cache: "no-store" })
+		.then(function(response) { return response.text(); })
+		.then(function(text) {
+			text.split("\n").slice(1).forEach(function(line) {
+				var mac = line.split(",")[0].trim();
+				if (mac) reserved[mac.toUpperCase()] = true;
+			});
+		});
+
+	window.genClientList = function() {
+		gen.apply(this, arguments);
+		for (var i = 0; i < clientList.length; i++) {
+			var client = clientList[clientList[i]];
+			if (client && client.ipMethod == "DHCP" && reserved[clientList[i].toUpperCase()])
+				client.ipMethod = "Manual";
+		}
+	};
+})();
+EOF
+	chmod 644 "$NETWORKMAP_JS_PATH"
+
+	for page in $NETWORKMAP_PAGES
+	do
+		grep -qF "$scriptTag" "/www/$page" && continue
+		mountedPage="/tmp/${SCRIPT_NAME}_$(basename "$page")"
+		sed "s~</head>~${scriptTag}&~" "/www/$page" > "$mountedPage"
+		mount -o bind "$mountedPage" "/www/$page"
+	done
+}
+
+Unmount_NetworkMap_Label()
+{
+	local page mountedPage
+
+	for page in $NETWORKMAP_PAGES
+	do
+		mountedPage="/tmp/${SCRIPT_NAME}_$(basename "$page")"
+		cmp -s "/www/$page" "$mountedPage" && umount "/www/$page" 2>/dev/null
+		rm -f "$mountedPage"
+	done
+	rm -f "$NETWORKMAP_JS_PATH"
 }
 
 ##-------------------------------------##
@@ -5361,6 +5420,7 @@ Menu_Uninstall()
 	Shortcut_Script delete
 	umount "$ORIGN_LAN_DHCP_SERVER_PAGE" 2>/dev/null
 	rm -f "$MOUNT_LAN_DHCP_SERVER_PAGE"
+	Unmount_NetworkMap_Label
 	rm -f "$guestNetInfoJSfilePath" "$dhcpGuestNetConfigFPath"
 
 	# Maximum LEASE time in secs to store in NVRAM #
