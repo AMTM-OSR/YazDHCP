@@ -13,7 +13,7 @@
 ##    Forked from https://github.com/jackyaz/YazDHCP    ##
 ##                                                      ##
 ##########################################################
-# Last Modified: 2026-Oct-11
+# Last Modified: 2026-Nov-23
 #---------------------------------------------------------
 
 #############################################
@@ -24,14 +24,15 @@
 # shellcheck disable=SC2045
 # shellcheck disable=SC2059
 # shellcheck disable=SC2155
+# shellcheck disable=SC3018
 # shellcheck disable=SC3043
 # shellcheck disable=SC3045
 #############################################
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="YazDHCP"
-readonly SCRIPT_VERSION="v1.2.7"
-readonly SCRIPT_VERSTAG="26101104"
+readonly SCRIPT_VERSION="v1.3.0"
+readonly SCRIPT_VERSTAG="26112323"
 SCRIPT_BRANCH="develop"
 SCRIPT_REPO="https://raw.githubusercontent.com/AMTM-OSR/${SCRIPT_NAME}/$SCRIPT_BRANCH"
 
@@ -39,16 +40,24 @@ readonly TEMP_DIR="/tmp/var/tmp"
 readonly JFFS_ADDONS="/jffs/addons"
 readonly JFFS_SCRIPTS="/jffs/scripts"
 readonly SCRIPT_DIR="${JFFS_ADDONS}/${SCRIPT_NAME}.d"
-readonly SCRIPT_CONF="$SCRIPT_DIR/DHCP_clients"
+readonly DHCP_Clients_LIST="${SCRIPT_DIR}/DHCP_clients"
 readonly SCRIPT_FPATH="${JFFS_SCRIPTS}/$SCRIPT_NAME"
 readonly SCRIPT_WEBPAGE_DIR="$(readlink -f /www/user)"
-readonly SCRIPT_WEB_DIR="$SCRIPT_WEBPAGE_DIR/$SCRIPT_NAME"
+readonly SCRIPT_WEB_DIR="${SCRIPT_WEBPAGE_DIR}/$SCRIPT_NAME"
 readonly SHARED_DIR="${JFFS_ADDONS}/shared-jy"
-readonly SHARED_REPO="https://raw.githubusercontent.com/AMTM-OSR/shared-jy/master"
-readonly SHARED_WEB_DIR="$SCRIPT_WEBPAGE_DIR/shared-jy"
+readonly SHARED_LIBS_DIR="${JFFS_ADDONS}/shared-libs"
+readonly SHARED_REPO="https://raw.githubusercontent.com/AMTM-OSR/shared-jy/${SCRIPT_BRANCH}"
+readonly SHARED_WEB_DIR="${SCRIPT_WEBPAGE_DIR}/shared-jy"
 readonly SHARED_CUSTOM_CONFIG_NAME="custom_settings.txt"
 readonly SHARED_CUSTOM_CONFIG_FILE="${JFFS_ADDONS}/$SHARED_CUSTOM_CONFIG_NAME"
 readonly SHARED_CUSTOM_CONFIG_BACKUP="${SCRIPT_DIR}/${SHARED_CUSTOM_CONFIG_NAME}.BAKUP"
+
+# To handle stuck 'nvram' and 'wl' commands #
+readonly StuckCmdsCONFIG="${SCRIPT_DIR}/StuckCmds.conf"
+readonly CRU_Cmd_SH="${SHARED_LIBS_DIR}/CRU_Cmd.sh"
+readonly CRU_CmdHandlerSH="${SHARED_LIBS_DIR}/CRU_CmdHandler.sh"
+readonly WL_CmdHandlerLIB="${SHARED_LIBS_DIR}/WL_CmdHandler.lib.sh"
+readonly NVRAM_CmdHandlerLIB="${SHARED_LIBS_DIR}/NVRAM_CmdHandler.lib.sh"
 
 ### End of script variables ###
 
@@ -253,66 +262,81 @@ Print_Output()
 }
 
 ##-------------------------------------##
-## Added by Martinski W. [2026-Sep-07] ##
+## Added by Martinski W. [2026-Oct-24] ##
 ##-------------------------------------##
-readonly nvramInitUSleep=10
-readonly nvramWaitUSleep=50
-readonly nvramWaitFactor=20000
-readonly nvramWaitSecMAX=2
-readonly nvramWaitCntMAX="$((nvramWaitSecMAX * nvramWaitFactor))"
-readonly nvramValueTempFPath="${TEMP_DIR}/nvramValue_${SCRIPT_NAME}_$$.TMP.TXT"
-##-------------------------------------##
-_NVRAM_Get_()
+_Use_WL_CmdHandlerLib_()
 {
-   local nvramProcID  nvramProcOK=false  retCode=1
-   local waitCountNUM=0  logMsgStr  nvramKeyValue=""
-
-   printf '' > "$nvramValueTempFPath"
-   nvram get "$1" > "$nvramValueTempFPath" &
-   nvramProcID="$!"
-   usleep "$nvramInitUSleep"
-
-   while true
-   do
-       if ! kill -EXIT "$nvramProcID" 2>/dev/null
-       then nvramProcOK=true ; break
-       fi
-       usleep "$nvramWaitUSleep"
-       waitCountNUM="$((waitCountNUM + 1))"
-       if [ "$waitCountNUM" -ge "$nvramWaitCntMAX" ]
-       then break
-       fi
-   done
-
-   if kill -EXIT "$nvramProcID" 2>/dev/null
-   then
-       nvramProcOK=false
-       kill -KILL "$nvramProcID" 2>/dev/null ; wait "$nvramProcID"
-       logMsgStr="**ALERT**: Wait timeout [$nvramWaitSecMAX secs] for 'nvram get $1' command expired."
-       Print_Output true "$logMsgStr" "$ERR"
-   fi
-   if "$nvramProcOK" && [ -s "$nvramValueTempFPath" ]
-   then
-       nvramKeyValue="$(cat "$nvramValueTempFPath")"
-       retCode=0
-   fi
-
-   rm -f "$nvramValueTempFPath"
-   echo "$nvramKeyValue"
-   return "$retCode"
+	[ ! -s "$WL_CmdHandlerLIB" ] && return 1
+	[ ! -s "$StuckCmdsCONFIG" ] && return 0
+	if ! grep -q '^USE_WL_CMD_HANDLR_LIB=' "$StuckCmdsCONFIG" || \
+	   grep -q '^USE_WL_CMD_HANDLR_LIB=true$' "$StuckCmdsCONFIG"
+	then return 0
+	else return 1
+	fi
 }
+
+##-------------------------------------##
+## Added by Martinski W. [2026-Oct-24] ##
+##-------------------------------------##
+_Use_NVRAM_CmdHandlerLib_()
+{
+    [ ! -s "$NVRAM_CmdHandlerLIB" ] && return 1
+    [ ! -s "$StuckCmdsCONFIG" ] && return 0
+	if ! grep -q '^USE_NVRAM_CMD_HANDLR_LIB=' "$StuckCmdsCONFIG" || \
+	   grep -q '^USE_NVRAM_CMD_HANDLR_LIB=true$' "$StuckCmdsCONFIG"
+	then return 0
+	else return 1
+	fi
+}
+
+##-------------------------------------##
+## Added by Martinski W. [2026-Oct-25] ##
+##-------------------------------------##
+_MoveToSharedLibsDir_()
+{
+    if [ ! -d "$SHARED_DIR" ]
+	then return 1
+	fi
+	if [ ! -d "$SHARED_LIBS_DIR" ]
+	then mkdir -p "$SHARED_LIBS_DIR"
+	fi
+	local scriptList='CRU_Cmd.sh CRU_CmdHandler.sh WL_CmdHandler.lib.sh NVRAM_CmdHandler.lib.sh'
+
+	for thescript in $scriptList
+	do
+		[ ! -s "${SHARED_DIR}/$thescript" ] && continue
+		if [ ! -s "${SHARED_LIBS_DIR}/$thescript" ] || \
+           ! cmp -s "${SHARED_DIR}/$thescript" "${SHARED_LIBS_DIR}/$thescript"
+		then
+            mv -f "${SHARED_DIR}/$thescript" "$SHARED_LIBS_DIR"
+            chmod 755 "${SHARED_LIBS_DIR}/$thescript"
+		fi
+	done
+}
+
+_MoveToSharedLibsDir_
+
+if _Use_WL_CmdHandlerLib_
+then . "$WL_CmdHandlerLIB"
+else WL_Cmd="$(which wl | head -n1)"
+fi
+
+if _Use_NVRAM_CmdHandlerLib_
+then . "$NVRAM_CmdHandlerLIB"
+else NVRAM_Cmd="$(which nvram | head -n1)"
+fi
 
 ##----------------------------------------##
 ## Modified by Martinski W. [2024-Jun-27] ##
 ##----------------------------------------##
-[ -z "$(_NVRAM_Get_ odmpid)" ] && ROUTER_MODEL="$(_NVRAM_Get_ productid)" || ROUTER_MODEL="$(_NVRAM_Get_ odmpid)"
+[ -z "$($NVRAM_Cmd get odmpid)" ] && ROUTER_MODEL="$($NVRAM_Cmd get productid)" || ROUTER_MODEL="$($NVRAM_Cmd get odmpid)"
 ROUTER_MODEL="$(echo "$ROUTER_MODEL" | tr 'a-z' 'A-Z')"
 
 ##----------------------------------------##
 ## Modified by Martinski W. [2025-Mar-16] ##
 ##----------------------------------------##
-readonly fwInstalledBaseVers="$(_NVRAM_Get_ firmver | sed 's/\.//g')"
-readonly fwInstalledBuildVers="$(_NVRAM_Get_ buildno)"
+readonly fwInstalledBaseVers="$($NVRAM_Cmd get firmver | sed 's/\.//g')"
+readonly fwInstalledBuildVers="$($NVRAM_Cmd get buildno)"
 readonly fwInstalledBranchVer="${fwInstalledBaseVers}.${fwInstalledBuildVers}"
 readonly scriptVersRegExp="v[0-9]{1,2}([.][0-9]{1,2})([.][0-9]{1,2})"
 readonly branchxStr_TAG="[Branch: $SCRIPT_BRANCH]"
@@ -322,11 +346,11 @@ readonly versionMod_TAG="$SCRIPT_VERSION on $ROUTER_MODEL"
 ##-------------------------------------##
 ## Added by Martinski W. [2025-Sep-05] ##
 ##-------------------------------------##
-readonly LAN_DomainName="$(_NVRAM_Get_ lan_domain)"
-readonly wifiIFnameList="$(_NVRAM_Get_ wl_ifnames)"
-readonly mainLAN_IFname="$(_NVRAM_Get_ lan_ifname)"
-readonly mainLAN_IPaddr="$(_NVRAM_Get_ lan_ipaddr)"
-readonly mainNET_IPmask="$(_NVRAM_Get_ lan_netmask)"
+readonly LAN_DomainName="$($NVRAM_Cmd get lan_domain)"
+readonly wifiIFnameList="$($NVRAM_Cmd get wl_ifnames)"
+readonly mainLAN_IFname="$($NVRAM_Cmd get lan_ifname)"
+readonly mainLAN_IPaddr="$($NVRAM_Cmd get lan_ipaddr)"
+readonly mainNET_IPmask="$($NVRAM_Cmd get lan_netmask)"
 readonly mainNET_CIDR="$(ip route show | grep -E "dev[[:blank:]]* ${mainLAN_IFname}[[:blank:]]* proto kernel" | awk -F' ' '{print $1}')"
 
 ##----------------------------------------##
@@ -334,7 +358,7 @@ readonly mainNET_CIDR="$(ip route show | grep -E "dev[[:blank:]]* ${mainLAN_IFna
 ##----------------------------------------##
 Firmware_Version_Check()
 {
-	if _NVRAM_Get_ rc_support | grep -qF 'am_addons'
+	if $NVRAM_Cmd get rc_support | grep -qF 'am_addons'
 	then return 0
 	fi
 	Print_Output true "Unsupported firmware version detected" "$ERR"
@@ -347,41 +371,51 @@ FirmwareVersionNum()
 { echo "$1" | awk -F. '{ printf("%d%03d%03d%02d\n", $1,$2,$3,$4); }' ; }
 
 ### Code for these functions inspired by https://github.com/Adamm00 - credit to @Adamm ###
+##----------------------------------------##
+## Modified by Martinski W. [2026-Oct-24] ##
+##----------------------------------------##
 Check_Lock()
 {
-	if [ -f "/tmp/$SCRIPT_NAME.lock" ]
+	local doExit=false
+
+	if [ -f "/tmp/${SCRIPT_NAME}.lock" ]
 	then
-		ageoflock=$(($(date +%s) - $(date +%s -r /tmp/$SCRIPT_NAME.lock)))
-		if [ "$ageoflock" -gt 600 ]
+		ageOfLock="$(($(date +'%s') - $(date +'%s' -r "/tmp/${SCRIPT_NAME}.lock")))"
+		if [ "$ageOfLock" -gt 600 ]  #10 minutes#
 		then
 			Print_Output true "Stale lock file found (>600 seconds old) - purging lock" "$ERR"
-			kill "$(sed -n '1p' /tmp/$SCRIPT_NAME.lock)" >/dev/null 2>&1
+			kill "$(sed -n '1p' "/tmp/${SCRIPT_NAME}.lock")" >/dev/null 2>&1
 			Clear_Lock
-			echo "$$" > "/tmp/$SCRIPT_NAME.lock"
+			echo "$$" > "/tmp/${SCRIPT_NAME}.lock"
 			return 0
 		else
-			Print_Output true "Lock file found (age: $ageoflock seconds) - stopping to prevent duplicate runs" "$ERR"
 			if [ $# -eq 0 ] || [ -z "$1" ]
 			then
-				exit 1
+				doExit=true
 			else
 				if [ "$1" = "webui" ]
 				then
+					doExit=true
 					_Update_GuestNetCheck_Status_ LOCKED
-					exit 1
 				fi
-				return 1
 			fi
+			if "$doExit"
+			then
+				Print_Output true "Lock file found (age: $ageOfLock seconds) - stopping to prevent duplicate runs" "$ERR"
+				exit 1
+			fi
+			Print_Output true "Lock file found (age: $ageOfLock seconds)" "$WARN"
+			return 1
 		fi
 	else
-		echo "$$" > "/tmp/$SCRIPT_NAME.lock"
+		echo "$$" > "/tmp/${SCRIPT_NAME}.lock"
 		return 0
 	fi
 }
 
 Clear_Lock()
 {
-	rm -f "/tmp/$SCRIPT_NAME.lock" 2>/dev/null
+	rm -f "/tmp/${SCRIPT_NAME}.lock" 2>/dev/null
 	return 0
 }
 
@@ -452,7 +486,7 @@ DHCP_LeaseValueToSeconds()
 ##----------------------------------------------##
 Check_DHCP_LeaseTime()
 {
-   NVRAM_LeaseTime="$(_NVRAM_Get_ "$DHCP_LEASE_KEYN")"
+   NVRAM_LeaseTime="$($NVRAM_Cmd get "$DHCP_LEASE_KEYN")"
 
    if [ ! -f "$SCRIPT_DHCP_LEASE_CONF" ]
    then
@@ -768,8 +802,8 @@ Conf_FromSettings()
 	then
 		if [ "$(grep -cE "^(yazdhcp_client|$YazDHCP_LEASEtag)" $SETTINGSFILE)" -gt 0 ]
 		then
-			Print_Output true "Updated DHCP information from WebUI found, merging into $SCRIPT_CONF" "$PASS"
-			cp -a "$SCRIPT_CONF" "${SCRIPT_CONF}.bak"
+			Print_Output true "Updated DHCP information from WebUI found, merging into $DHCP_Clients_LIST" "$PASS"
+			cp -a "$DHCP_Clients_LIST" "${DHCP_Clients_LIST}.bak"
 			grep -E "^(yazdhcp_client|$YazDHCP_LEASEtag)" "$SETTINGSFILE" > "$TEMP_FILE"
 			sed -i "s/^yazdhcp_//g;s/ /=/g" "$TEMP_FILE"
 			DHCPCLIENTS=""
@@ -797,7 +831,7 @@ Conf_FromSettings()
 			RESTART_DNSMASQ=false
 			DO_NVRAM_COMMIT=false
 
-			echo "MAC,IP,HOSTNAME,DNS" > "$SCRIPT_CONF"
+			echo "MAC,IP,HOSTNAME,DNS" > "$DHCP_Clients_LIST"
 
 			while IFS='' read -r theLine || [ -n "$theLine" ]
 			do
@@ -807,24 +841,24 @@ Conf_FromSettings()
 				fi
 				if [ "$(echo "$theLine" | wc -w)" -eq 4 ]
 				then
-					echo "$theLine" | awk -F' ' '{ print ""$1","$2","$3","$4""; }' >> "$SCRIPT_CONF"
+					echo "$theLine" | awk -F' ' '{ print ""$1","$2","$3","$4""; }' >> "$DHCP_Clients_LIST"
 				elif [ "$(echo "$theLine" | wc -w)" -gt 1 ]
 				then
 					if [ "$(echo "$theLine" | cut -d " " -f3 | wc -L)" -eq 0 ]
 					then
-						echo "$theLine" | awk -F' ' '{ print ""$1","$2","","$3""; }' >> "$SCRIPT_CONF"
+						echo "$theLine" | awk -F' ' '{ print ""$1","$2","","$3""; }' >> "$DHCP_Clients_LIST"
 					else
-						printf "%s,\n" "$(echo "$theLine" | sed 's/ /,/g')" >> "$SCRIPT_CONF"
+						printf "%s,\n" "$(echo "$theLine" | sed 's/ /,/g')" >> "$DHCP_Clients_LIST"
 					fi
 				fi
 			done < "$PARSED_FILE"
 
-			cp -fp "$SCRIPT_CONF" "${SCRIPT_CONF}.tmp"
-			sort -t . -k 3,3n -k 4,4n "${SCRIPT_CONF}.tmp" > "$SCRIPT_CONF"
-			rm -f "${SCRIPT_CONF}.tmp" "$PARSED_FILE"
+			cp -fp "$DHCP_Clients_LIST" "${DHCP_Clients_LIST}.tmp"
+			sort -t . -k 3,3n -k 4,4n "${DHCP_Clients_LIST}.tmp" > "$DHCP_Clients_LIST"
+			rm -f "${DHCP_Clients_LIST}.tmp" "$PARSED_FILE"
 
-			if [ -s "${SCRIPT_CONF}.bak" ] && \
-			   ! diff -q "$SCRIPT_CONF" "${SCRIPT_CONF}.bak" >/dev/null 2>&1
+			if [ -s "${DHCP_Clients_LIST}.bak" ] && \
+			   ! diff -q "$DHCP_Clients_LIST" "${DHCP_Clients_LIST}.bak" >/dev/null 2>&1
 			then RESTART_DNSMASQ=true
 			else RESTART_DNSMASQ="$DO_NVRAM_COMMIT"
 			fi
@@ -842,7 +876,7 @@ Conf_FromSettings()
 				(sleep 3 ; service restart_dnsmasq >/dev/null 2>&1) &
 			fi
 		else
-			Print_Output false "No updated DHCP information from WebUI found, no merge into $SCRIPT_CONF necessary" "$PASS"
+			Print_Output false "No updated DHCP information from WebUI found, no merge into $DHCP_Clients_LIST necessary" "$PASS"
 		fi
 		if [ -s "$SHARED_CUSTOM_CONFIG_BACKUP" ]
 		then
@@ -1031,27 +1065,29 @@ Update_Version()
 			Print_Output true "MD5 hash of $SCRIPT_NAME does NOT match - downloading updated $serverVer" "$PASS"
 		fi
 
-		Update_File shared-jy.tar.gz
-
 		if [ "$getUpdate" != "false" ]
 		then
-			Update_File "$LAN_DHCP_SERVER_WEBPAGE"
 			if ! Download_File "$SCRIPT_REPO" "${SCRIPT_NAME}.sh" "$SCRIPT_FPATH"
 			then
 				Print_Output true "$SCRIPT_NAME script file was NOT updated. Download failed." "$ERR"
 				Clear_Lock ; return 1
 			fi
 			chmod 755 "$SCRIPT_FPATH"
+
+			Update_File shared-jy.tar.gz
+			Update_File "$LAN_DHCP_SERVER_WEBPAGE"
+			_PromptForMountingModifiedCRU_
+
 			Print_Output true "$SCRIPT_NAME was successfully updated" "$PASS"
 			Set_Version_Custom_Settings local "$serverVer"
 			Set_Version_Custom_Settings server "$serverVer"
 			Clear_Lock
 			if [ $# -eq 0 ] || [ -z "$1" ]
 			then
-				exec "$0" setversion
+				exec "$0" postupdate
 			elif [ "$1" = "unattended" ]
 			then
-				exec "$0" setversion unattended
+				exec "$0" postupdate unattended
 			fi
 			exit 0
 		else
@@ -1060,10 +1096,8 @@ Update_Version()
 		fi
 	fi
 
-	if [ $# -gt 0 ] && [ "$1" = "force" ]
+	if [ "$1" = "force" ]
 	then
-		Update_File shared-jy.tar.gz
-		Update_File "$LAN_DHCP_SERVER_WEBPAGE"
 		if ! Download_File "$SCRIPT_REPO" "${SCRIPT_NAME}.sh" "$SCRIPT_FPATH"
 		then
 			Print_Output true "$SCRIPT_NAME script was NOT updated. Download failed." "$ERR"
@@ -1072,16 +1106,22 @@ Update_Version()
 		chmod 755 "$SCRIPT_FPATH"
 		serverVer="$(grep '^readonly SCRIPT_VERSION=' "$SCRIPT_FPATH" | grep -m1 -oE "$scriptVersRegExp")"
 		Print_Output true "Downloaded the latest version ($serverVer) of $SCRIPT_NAME" "$PASS"
+
+		Update_File shared-jy.tar.gz
+		Update_File "$LAN_DHCP_SERVER_WEBPAGE"
+		_PromptForMountingModifiedCRU_
+
 		Print_Output true "$SCRIPT_NAME was successfully updated" "$PASS"
 		Set_Version_Custom_Settings local "$serverVer"
 		Set_Version_Custom_Settings server "$serverVer"
 		Clear_Lock
 		if [ $# -lt 2 ] || [ -z "$2" ]
 		then
-			exec "$0" setversion
+			PressEnter
+			exec "$0" postupdate
 		elif [ "$2" = "unattended" ]
 		then
-			exec "$0" setversion unattended
+			exec "$0" postupdate unattended
 		fi
 		exit 0
 	fi
@@ -1166,8 +1206,12 @@ Update_File()
 				return 1
 			fi
 			rm -f "${SHARED_DIR}/$1"
+			_MoveToSharedLibsDir_
+			_CheckStuckCmdsConfig_
 			Print_Output true "New version of $1 was downloaded" "$PASS"
 		else
+			_MoveToSharedLibsDir_
+			_CheckStuckCmdsConfig_
 			rm -f "$tempFileMD5"
 		fi
 	else
@@ -1185,12 +1229,76 @@ Create_Dirs()
 		mkdir -p "$SHARED_DIR"
 	fi
 
+	if [ ! -d "$SHARED_LIBS_DIR" ]; then
+		mkdir -p "$SHARED_LIBS_DIR"
+	fi
+
 	if [ ! -d "$SCRIPT_WEBPAGE_DIR" ]; then
 		mkdir -p "$SCRIPT_WEBPAGE_DIR"
 	fi
 
 	if [ ! -d "$SCRIPT_WEB_DIR" ]; then
 		mkdir -p "$SCRIPT_WEB_DIR"
+	fi
+}
+
+##-------------------------------------##
+## Added by Martinski W. [2026-Aug-20] ##
+##-------------------------------------##
+_DOStoUNIX_()
+{
+    if [ $# -eq 0 ] || [ -z "$1" ] || [ ! -s "$1" ]
+    then return 1 ; fi
+    if grep -q "$(printf '\r\n')" "$1" 2>/dev/null
+    then dos2unix "$1" ; fi
+}
+
+##-------------------------------------##
+## Added by Martinski W. [2026-Oct-24] ##
+##-------------------------------------##
+_CheckStuckCmdsConfig_()
+{
+	if [ ! -s "$WL_CmdHandlerLIB" ] || [ ! -s "$NVRAM_CmdHandlerLIB" ]
+	then return 1
+	fi
+    [ ! -f "$StuckCmdsCONFIG" ] && printf '' > "$StuckCmdsCONFIG"
+
+	if [ -s "$StuckCmdsCONFIG" ]
+	then
+		chmod 644 "$StuckCmdsCONFIG"
+		_DOStoUNIX_ "$StuckCmdsCONFIG"
+
+		if ! grep -q '^USE_WL_CMD_HANDLR_LIB=' "$StuckCmdsCONFIG"
+		then
+			{
+			   echo "# To handle stuck 'wl' commands #"
+			   printf "USE_WL_CMD_HANDLR_LIB=true\n\n"
+			} >> "$StuckCmdsCONFIG"
+		fi
+		if ! grep -qE '^USE_WL_CMD_HANDLR_LIB=(true|false)$' "$StuckCmdsCONFIG"
+		then
+			sed -i 's/^USE_WL_CMD_HANDLR_LIB=.*/USE_WL_CMD_HANDLR_LIB=true/' "$StuckCmdsCONFIG"
+		fi
+
+		if ! grep -q '^USE_NVRAM_CMD_HANDLR_LIB=' "$StuckCmdsCONFIG"
+		then
+			{
+			   echo "# To handle stuck 'nvram' commands #"
+			   printf "USE_NVRAM_CMD_HANDLR_LIB=true\n\n"
+			} >> "$StuckCmdsCONFIG"
+		fi
+		if ! grep -qE '^USE_NVRAM_CMD_HANDLR_LIB=(true|false)$' "$StuckCmdsCONFIG"
+		then
+			sed -i 's/^USE_NVRAM_CMD_HANDLR_LIB=.*/USE_NVRAM_CMD_HANDLR_LIB=true/' "$StuckCmdsCONFIG"
+		fi
+	else
+		{
+		   echo "# To handle stuck 'wl' commands #"
+		   printf "USE_WL_CMD_HANDLR_LIB=true\n\n"
+		   echo "# To handle stuck 'nvram' commands #"
+		   printf "USE_NVRAM_CMD_HANDLR_LIB=true\n\n"
+		} > "$StuckCmdsCONFIG"
+		chmod 644 "$StuckCmdsCONFIG"
 	fi
 }
 
@@ -1209,7 +1317,7 @@ _CheckForWirelessRadioEnabled_()
     fi
     for wifiIFname in $wifiIFnameList
     do
-        wifiRadioStatus="$(wl -i "$wifiIFname" bss 2>/dev/null)"
+        wifiRadioStatus="$($WL_Cmd -i "$wifiIFname" bss 2>/dev/null)"
         if [ "$wifiRadioStatus" = "up" ]
         then
             wifiRadioEnabled=true
@@ -1333,7 +1441,7 @@ _Init_ActiveGuestNetwork_SubnetInfo_()
 ##-------------------------------------##
 _Is_DHCP_Static_IPs_Enabled_()
 {
-   if [ "$(_NVRAM_Get_ dhcp_static_x)" = "1" ]
+   if [ "$($NVRAM_Cmd get dhcp_static_x)" = "1" ]
    then
        echo "true" ; return 0
    else
@@ -1679,14 +1787,13 @@ Create_Symlinks()
 {
 	rm -rf "${SCRIPT_WEB_DIR:?}/"* 2>/dev/null
 
-	ln -s "$SCRIPT_CONF" "$SCRIPT_WEB_DIR/DHCP_clients.htm" 2>/dev/null
+	ln -sf "$DHCP_Clients_LIST" "${SCRIPT_WEB_DIR}/DHCP_clients.htm" 2>/dev/null
 	Create_DHCP_LeaseConfig
 	Create_CustomUserIconsConfig
 	Create_DHCP_GuestNetworkConfig
 
-	if [ ! -d "$SHARED_WEB_DIR" ]; then
-		ln -s "$SHARED_DIR" "$SHARED_WEB_DIR" 2>/dev/null
-	fi
+	[ ! -L "$SHARED_WEB_DIR" ] && \
+	ln -snf "$SHARED_DIR" "$SHARED_WEB_DIR" 2>/dev/null
 }
 
 ##----------------------------------------##
@@ -2587,17 +2694,321 @@ Shortcut_Script()
 	esac
 }
 
-PressEnter()
+##-------------------------------------##
+## Added by Martinski W. [2026-Oct-25] ##
+##-------------------------------------##
+_PromptForMountingModifiedCRU_()
 {
+    if [ ! -s "$CRU_Cmd_SH" ] || \
+       [ ! -s "$CRU_CmdHandlerSH" ]
+    then return 1   #No Files#
+    fi
+    if ! $CRU_CmdHandlerSH -checkEnable >/dev/null
+    then return 1   #Mounting is DISABLED#
+    fi
+    if $CRU_CmdHandlerSH -check >/dev/null
+    then return 0   #Already Mounted#
+    fi
+
+    if $CRU_CmdHandlerSH -status >/dev/null && \
+       $CRU_CmdHandlerSH -mount >/dev/null
+    then
+        Print_Output true "The modified CRU script [$CRU_Cmd_SH] was remounted." "$WARN"
+        return 0
+    fi
+
+    local retCode=1
+
+    printf "\n${BOLD} Would you like to mount a modified CRU script to handle"
+    printf "\n stuck 'nvram' commands that can happen when running the"
+    printf "\n original built-in 'cru' command? [Y/N]${CLRct} "
+    if ! _PromptYESorNO_
+    then return 1
+    fi
+
+    $CRU_CmdHandlerSH -enable >/dev/null
+    if $CRU_CmdHandlerSH -mount >/dev/null
+    then
+        retCode=0
+        Print_Output true "The modified CRU script [$CRU_Cmd_SH] is now MOUNTED." "$WARN"
+        Print_Output false "An entry was also added to the 'init-start' script to automatically mount the modified CRU script during every reboot." "$WARN"
+    else
+        retCode=1
+        Print_Output true "Unable to mount the modified CRU script [$CRU_Cmd_SH]." "$WARN"
+    fi
+
+    return "$retCode"
+}
+
+##-------------------------------------##
+## Added by Martinski W. [2026-Oct-25] ##
+##-------------------------------------##
+_WL_CmdLibHandler_()
+{
+	if [ ! -s "$WL_CmdHandlerLIB" ]
+    then
+        Print_Output false "Library script [$WL_CmdHandlerLIB] is NOT found." "$PASS"
+        return 1
+    fi
+    local retCode=1
+
+    case "$1" in
+        ENABLE)
+            if [ ! -s "$StuckCmdsCONFIG" ] || \
+               ! grep -q '^USE_WL_CMD_HANDLR_LIB=' "$StuckCmdsCONFIG"
+		    then
+                {
+                   echo "# To handle stuck 'wl' commands #"
+                   printf "USE_WL_CMD_HANDLR_LIB=true\n\n"
+                } >> "$StuckCmdsCONFIG"
+            fi
+            if ! grep -qE '^USE_WL_CMD_HANDLR_LIB=true$' "$StuckCmdsCONFIG"
+            then
+                sed -i 's/^USE_WL_CMD_HANDLR_LIB=.*/USE_WL_CMD_HANDLR_LIB=true/' "$StuckCmdsCONFIG"
+		    fi
+            if grep -qE '^USE_WL_CMD_HANDLR_LIB=true$' "$StuckCmdsCONFIG"
+            then
+                retCode=0
+                Print_Output false "Library script [$WL_CmdHandlerLIB] is now ENABLED." "$PASS"
+            else
+                retCode=1
+                Print_Output false "Library script [$WL_CmdHandlerLIB] is NOT enabled." "$PASS"
+            fi
+            ;;
+        DISABLE)
+            if [ ! -s "$StuckCmdsCONFIG" ] || \
+               ! grep -q '^USE_WL_CMD_HANDLR_LIB=' "$StuckCmdsCONFIG"
+		    then
+                {
+                   echo "# To handle stuck 'wl' commands #"
+                   printf "USE_WL_CMD_HANDLR_LIB=false\n\n"
+                } >> "$StuckCmdsCONFIG"
+            fi
+            if ! grep -qE '^USE_WL_CMD_HANDLR_LIB=false$' "$StuckCmdsCONFIG"
+            then
+                sed -i 's/^USE_WL_CMD_HANDLR_LIB=.*/USE_WL_CMD_HANDLR_LIB=false/' "$StuckCmdsCONFIG"
+		    fi
+            if grep -qE '^USE_WL_CMD_HANDLR_LIB=false$' "$StuckCmdsCONFIG"
+            then
+                retCode=0
+                Print_Output false "Library script [$WL_CmdHandlerLIB] is now DISABLED." "$PASS"
+            else
+                retCode=1
+                Print_Output false "Library script [$WL_CmdHandlerLIB] is NOT disabled." "$PASS"
+            fi
+            ;;
+        STATUS)
+            if _Use_WL_CmdHandlerLib_
+            then
+                retCode=0
+                Print_Output false "Library script [$WL_CmdHandlerLIB] is currently ENABLED." "$PASS"
+            else
+                retCode=1
+                Print_Output false "Library script [$WL_CmdHandlerLIB] is currently DISABLED." "$PASS"
+            fi
+            ;;
+    esac
+
+    return "$retCode"
+}
+
+##-------------------------------------##
+## Added by Martinski W. [2026-Oct-25] ##
+##-------------------------------------##
+_NVRAM_CmdLibHandler_()
+{
+	if [ ! -s "$NVRAM_CmdHandlerLIB" ]
+    then
+        Print_Output false "Library script [$NVRAM_CmdHandlerLIB] is NOT found." "$PASS"
+        return 1
+    fi
+    local retCode=1
+
+    case "$1" in
+        ENABLE)
+            if [ ! -s "$StuckCmdsCONFIG" ] || \
+               ! grep -q '^USE_NVRAM_CMD_HANDLR_LIB=' "$StuckCmdsCONFIG"
+		    then
+                {
+                   echo "# To handle stuck 'nvram' commands #"
+                   printf "USE_NVRAM_CMD_HANDLR_LIB=true\n\n"
+                } >> "$StuckCmdsCONFIG"
+            fi
+            if ! grep -qE '^USE_NVRAM_CMD_HANDLR_LIB=true$' "$StuckCmdsCONFIG"
+            then
+                sed -i 's/^USE_NVRAM_CMD_HANDLR_LIB=.*/USE_NVRAM_CMD_HANDLR_LIB=true/' "$StuckCmdsCONFIG"
+		    fi
+            if grep -qE '^USE_NVRAM_CMD_HANDLR_LIB=true$' "$StuckCmdsCONFIG"
+            then
+                retCode=0
+                Print_Output false "Library script [$NVRAM_CmdHandlerLIB] is now ENABLED." "$PASS"
+            else
+                retCode=1
+                Print_Output false "Library script [$NVRAM_CmdHandlerLIB] is NOT enabled." "$PASS"
+            fi
+            ;;
+        DISABLE)
+            if [ ! -s "$StuckCmdsCONFIG" ] || \
+               ! grep -q '^USE_NVRAM_CMD_HANDLR_LIB=' "$StuckCmdsCONFIG"
+		    then
+                {
+                   echo "# To handle stuck 'nvram' commands #"
+                   printf "USE_NVRAM_CMD_HANDLR_LIB=false\n\n"
+                } >> "$StuckCmdsCONFIG"
+            fi
+            if ! grep -qE '^USE_NVRAM_CMD_HANDLR_LIB=false$' "$StuckCmdsCONFIG"
+            then
+                sed -i 's/^USE_NVRAM_CMD_HANDLR_LIB=.*/USE_NVRAM_CMD_HANDLR_LIB=false/' "$StuckCmdsCONFIG"
+		    fi
+            if grep -qE '^USE_NVRAM_CMD_HANDLR_LIB=false$' "$StuckCmdsCONFIG"
+            then
+                retCode=0
+                Print_Output false "Library script [$NVRAM_CmdHandlerLIB] is now DISABLED." "$PASS"
+            else
+                retCode=1
+                Print_Output false "Library script [$NVRAM_CmdHandlerLIB] is NOT disabled." "$PASS"
+            fi
+            ;;
+        STATUS)
+            if _Use_NVRAM_CmdHandlerLib_
+            then
+                retCode=0
+                Print_Output false "Library script [$NVRAM_CmdHandlerLIB] is currently ENABLED." "$PASS"
+            else
+                retCode=1
+                Print_Output false "Library script [$NVRAM_CmdHandlerLIB] is currently DISABLED." "$PASS"
+            fi
+            ;;
+    esac
+
+    return "$retCode"
+}
+
+##-------------------------------------##
+## Added by Martinski W. [2026-Oct-25] ##
+##-------------------------------------##
+_CRU_CmdHandler_()
+{
+    if [ ! -s "$CRU_Cmd_SH" ] || [ ! -s "$CRU_CmdHandlerSH" ]
+    then
+        Print_Output false "The modified CRU script [$CRU_Cmd_SH] is NOT found." "$PASS"
+        return 1
+    fi
+    local retCode=1
+
+    case "$1" in
+        ENABLE)
+            if $CRU_CmdHandlerSH -enable >/dev/null
+            then
+                retCode=0
+                Print_Output false "Mounting the modified CRU script [$CRU_Cmd_SH] is now ENABLED." "$PASS"
+            else
+                retCode=1
+                Print_Output false "Could NOT enable mounting the modified CRU script [$CRU_Cmd_SH]." "$PASS"
+            fi
+            ;;
+        DISABLE)
+            if $CRU_CmdHandlerSH -disable >/dev/null
+            then
+                retCode=0
+                Print_Output false "Mounting the modified CRU script [$CRU_Cmd_SH] is now DISABLED." "$PASS"
+            else
+                retCode=1
+                Print_Output false "Could NOT disable mounting the modified CRU script [$CRU_Cmd_SH]." "$PASS"
+            fi
+            ;;
+        MOUNT)
+            if ! $CRU_CmdHandlerSH -checkEnable >/dev/null
+            then
+                Print_Output false "Mounting the modified CRU script [$CRU_Cmd_SH] is currently DISABLED." "$PASS"
+                return 1
+            fi
+            if $CRU_CmdHandlerSH -mount >/dev/null
+            then
+                retCode=0
+                Print_Output false "The modified CRU script [$CRU_Cmd_SH] is now MOUNTED." "$PASS"
+            else
+                retCode=1
+                Print_Output false "Could NOT mount the modified CRU script [$CRU_Cmd_SH]." "$PASS"
+            fi
+            ;;
+        UNMOUNT)
+            if $CRU_CmdHandlerSH -unmount >/dev/null
+            then
+                retCode=0
+                Print_Output false "The modified CRU script [$CRU_Cmd_SH] is now UNMOUNTED." "$PASS"
+            else
+                retCode=1
+                Print_Output false "Could NOT unmount the modified CRU script [$CRU_Cmd_SH]." "$PASS"
+            fi
+            ;;
+        STATUS)
+            if $CRU_CmdHandlerSH -checkEnable >/dev/null
+            then
+                Print_Output false "Mounting the modified CRU script [$CRU_Cmd_SH] is currently ENABLED." "$PASS"
+            else
+                Print_Output false "Mounting the modified CRU script [$CRU_Cmd_SH] is currently DISABLED." "$PASS"
+            fi
+            if $CRU_CmdHandlerSH -status >/dev/null
+            then
+                retCode=0
+                Print_Output false "The modified CRU script [$CRU_Cmd_SH] is currently MOUNTED." "$PASS"
+            else
+                retCode=1
+                Print_Output false "The modified CRU script [$CRU_Cmd_SH] is currently UNMOUNTED." "$PASS"
+            fi
+            ;;
+    esac
+
+    return "$retCode"
+}
+
+##-------------------------------------##
+## Added by Martinski W. [2026-Oct-25] ##
+##-------------------------------------##
+_PromptYESorNO_()
+{
+	local yesORno  retCode=1  promptStr=""
+
+    ! "$isInteractive" && return 1
+
+	if [ $# -gt 0 ] && [ -n "$1" ]
+	then promptStr="$1"
+	fi
+
 	while true
 	do
-		printf "Press <Enter> key to continue..."
-		read -rs key
-		case "$key" in
-			*) break ;;
+		printf "$promptStr "
+		read -r yesORno
+		case "$yesORno" in
+			[Nn]|No|no) yesORno=No
+				retCode=1
+				break
+				;;
+			[Yy]|Yes|yes) yesORno=Yes
+				retCode=0
+				break
+				;;
+			 *) printf " Please answer Y or N"
+				if [ -z "$promptStr" ]
+				then printf ":"
+				else printf ".\n"
+				fi
+				;;
 		esac
 	done
-	return 0
+	echo "$yesORno"
+	return "$retCode"
+}
+
+##----------------------------------------##
+## Modified by Martinski W. [2023-Nov-20] ##
+##----------------------------------------##
+PressEnter()
+{
+   ! "$isInteractive" && return 0
+   printf "Press <Enter> key to continue..."
+   read -rs theKey ; echo
 }
 
 ##----------------------------------------------##
@@ -2707,7 +3118,7 @@ _NVRAM_IconsSaveKeyValue_()
        then NVRAM_SavedOK=true ; fi
    fi
 
-   theKeyValue="$(_NVRAM_Get_ "$NVRAM_ClientsKeyName")"
+   theKeyValue="$($NVRAM_Cmd get "$NVRAM_ClientsKeyName")"
    if [ -n "$theKeyValue" ]
    then
        if ! echo "$theKeyValue" | grep -qE "^<.*"
@@ -2737,7 +3148,7 @@ _NVRAM_IconsRestoreKeyValue_()
    if [ -f "$NVRAM_ClientsKeyVARsaved" ]
    then
       theKeyValueSaved="$(cat "$NVRAM_ClientsKeyVARsaved")"
-      if [ "$(_NVRAM_Get_ "$NVRAM_ClientsKeyName")" != "$theKeyValueSaved" ]
+      if [ "$($NVRAM_Cmd get "$NVRAM_ClientsKeyName")" != "$theKeyValueSaved" ]
       then
           nvram set ${NVRAM_ClientsKeyName}="$theKeyValueSaved"
           NVRAM_RestoredOK=true
@@ -3567,7 +3978,7 @@ CheckAgainstNVRAMvar()
     local MACx_Addrs  theRegExp2
 
     if [ ! -s /jffs/nvram/dhcp_staticlist ]
-    then theKeyVal="$(_NVRAM_Get_ dhcp_staticlist)"
+    then theKeyVal="$($NVRAM_Cmd get dhcp_staticlist)"
     else theKeyVal="$(cat /jffs/nvram/dhcp_staticlist)"
     fi
     if [ -z "$theKeyVal" ]
@@ -3627,13 +4038,13 @@ Validate_NVRAM_IPaddr_Reservation()
     theClientY="${MACx_Addrs},${IPv4_Addr3}"
     theClientZ="${MACaddr_RegEx},${IPv4_Addr4}"
 
-    if grep -qi "^${theClientX}," "$SCRIPT_CONF"
+    if grep -qi "^${theClientX}," "$DHCP_Clients_LIST"
     then
         dupInfoMsg="Client IP address reservation [${REDct}${theClientX}${WARN}] is already assigned"
-    elif grep -qiE "^${theClientY}[.]${IPv4octet_RegEx}," "$SCRIPT_CONF"
+    elif grep -qiE "^${theClientY}[.]${IPv4octet_RegEx}," "$DHCP_Clients_LIST"
     then
         dupInfoMsg="Client IP address reservation [${REDct}${theClientY}.*${WARN}] within the same subnet already assigned"
-    elif grep -qE "^${theClientZ}," "$SCRIPT_CONF"
+    elif grep -qE "^${theClientZ}," "$DHCP_Clients_LIST"
     then
         dupInfoMsg="Client IP address reservation [${REDct}${IPv4_Addr4}${WARN}] has already been assigned to another client"
     fi
@@ -3653,7 +4064,7 @@ Validate_NVRAM_IPaddr_Reservation()
 _CheckFor_NVRAM_DHCP_Assignments_3004_()
 {
 	if [ -s /jffs/nvram/dhcp_staticlist ] || \
-	   nvram show 2>/dev/null | grep -qE "^$NVRAM_3004_DHCPvar_RegExp"
+	   $NVRAM_Cmd show 2>/dev/null | grep -qE "^$NVRAM_3004_DHCPvar_RegExp"
 	then return 0
 	else return 1
 	fi
@@ -3665,7 +4076,7 @@ _CheckFor_NVRAM_DHCP_Assignments_3004_()
 _CheckFor_NVRAM_DHCP_Assignments_3006_()
 {
 	if [ "$fwInstalledBaseVers" -ge 3006 ] && \
-	   nvram show 2>/dev/null | grep -qE "^$NVRAM_3006_DHCPvar_RegExp1"
+	   $NVRAM_Cmd show 2>/dev/null | grep -qE "^$NVRAM_3006_DHCPvar_RegExp1"
 	then return 0
 	else return 1
 	fi
@@ -3717,7 +4128,7 @@ _Export_NVRAM_DHCP_Assignments_3004_()
 		echo >> "$1"
 	fi
 
-	nvramKeyVal="$(_NVRAM_Get_ dhcp_staticlist)"
+	nvramKeyVal="$($NVRAM_Cmd get dhcp_staticlist)"
 	if [ -n "$nvramKeyVal" ]
 	then
 		echo "$nvramKeyVal" | sed 's/</\n/g;s/>/|/g;s/<//g' | sed '/^$/d' > "$1"
@@ -3787,14 +4198,14 @@ _Export_NVRAM_DHCP_Assignments_3006_()
 	fi
 	local dhcpNVRAMvarKeyList  nvramVarKeyStr  nvramVarKey  nvramKeyVal
 
-	dhcpNVRAMvarKeyList="$(nvram show 2>/dev/null | grep -oE "^$NVRAM_3006_DHCPvar_RegExp0" | sort -u)"
+	dhcpNVRAMvarKeyList="$($NVRAM_Cmd show 2>/dev/null | grep -oE "^$NVRAM_3006_DHCPvar_RegExp0" | sort -u)"
 	if [ "${#dhcpNVRAMvarKeyList}" -eq 0 ]
 	then return 1
 	fi
 	for nvramVarKeyStr in $dhcpNVRAMvarKeyList
 	do
 		nvramVarKey="$(echo "$nvramVarKeyStr" | cut -d'=' -f1)"
-		nvramKeyVal="$(_NVRAM_Get_ "$nvramVarKey")"
+		nvramKeyVal="$($NVRAM_Cmd get "$nvramVarKey")"
 		if [ -n "$nvramKeyVal" ]
 		then
 			echo "$nvramKeyVal" > "$SCRIPT_DIR/.nvram_dhcp_$nvramVarKey"
@@ -3823,7 +4234,7 @@ _Export_DHCP_NVRAM_OLD_FW_Versions_()
 				Clear_Lock
 				return 1
 			fi
-		elif [ "$(_NVRAM_Get_ dhcp_hostnames | wc -m)" -le 1 ]
+		elif [ "$($NVRAM_Cmd get dhcp_hostnames | wc -m)" -le 1 ]
 		then
 			Print_Output true "DHCP hostnames NOT exported from NVRAM, no data found" "$PASS"
 			Clear_Lock
@@ -3834,13 +4245,13 @@ _Export_DHCP_NVRAM_OLD_FW_Versions_()
 		then
 			sed 's/</\n/g;s/>/ /g;s/<//g' /jffs/nvram/dhcp_staticlist | sed '/^$/d' > /tmp/yazdhcp-ips.tmp
 		else
-			_NVRAM_Get_ dhcp_staticlist | sed 's/</\n/g;s/>/ /g;s/<//g'| sed '/^$/d' > /tmp/yazdhcp-ips.tmp
+			$NVRAM_Cmd get dhcp_staticlist | sed 's/</\n/g;s/>/ /g;s/<//g'| sed '/^$/d' > /tmp/yazdhcp-ips.tmp
 		fi
 
 		if [ -f /jffs/nvram/dhcp_hostnames ]; then
 			HOSTNAME_LIST=$(sed 's/>undefined//' /jffs/nvram/dhcp_hostnames)
 		else
-			HOSTNAME_LIST=$(_NVRAM_Get_ dhcp_hostnames | sed 's/>undefined//')
+			HOSTNAME_LIST=$($NVRAM_Cmd get dhcp_hostnames | sed 's/>undefined//')
 		fi
 
 		OLDIFS=$IFS
@@ -3863,18 +4274,18 @@ _Export_DHCP_NVRAM_OLD_FW_Versions_()
 
 		awk 'NR==FNR { k[$1]=$2; next } { print $0, k[$1] }' /tmp/yazdhcp-hosts.tmp /tmp/yazdhcp-ips.tmp > /tmp/yazdhcp.tmp
 
-		echo "MAC,IP,HOSTNAME,DNS" > "$SCRIPT_CONF"
+		echo "MAC,IP,HOSTNAME,DNS" > "$DHCP_Clients_LIST"
 		sort -t . -k 3,3n -k 4,4n /tmp/yazdhcp.tmp > /tmp/yazdhcp_sorted.tmp
 
 		while IFS='' read -r line || [ -n "$line" ]
 		do
 			if [ "$(echo "$line" | wc -w)" -eq 4 ]; then
-				echo "$line" | awk '{ print ""$1","$2","$4","$3""; }' >> "$SCRIPT_CONF"
+				echo "$line" | awk '{ print ""$1","$2","$4","$3""; }' >> "$DHCP_Clients_LIST"
 			else
 				if ! Validate_IP "$(echo "$line" | cut -d " " -f3)" >/dev/null 2>&1; then
-					printf "%s,\\n" "$(echo "$line" | sed 's/ /,/g')" >> "$SCRIPT_CONF"
+					printf "%s,\\n" "$(echo "$line" | sed 's/ /,/g')" >> "$DHCP_Clients_LIST"
 				else
-					echo "$line" | awk '{ print ""$1","$2","","$3""; }' >> "$SCRIPT_CONF"
+					echo "$line" | awk '{ print ""$1","$2","","$3""; }' >> "$DHCP_Clients_LIST"
 				fi
 			fi
 		done < /tmp/yazdhcp_sorted.tmp
@@ -3886,7 +4297,7 @@ _Export_DHCP_NVRAM_OLD_FW_Versions_()
 			cp -f /jffs/nvram/dhcp_hostnames "$SCRIPT_DIR/.nvram_jffs_dhcp_hostnames"
 			rm -f /jffs/nvram/dhcp_hostnames
 		fi
-		_NVRAM_Get_ dhcp_hostnames > "$SCRIPT_DIR/.nvram_dhcp_hostnames"
+		$NVRAM_Cmd get dhcp_hostnames > "$SCRIPT_DIR/.nvram_dhcp_hostnames"
 		nvram unset dhcp_hostnames
 	fi
 }
@@ -3975,8 +4386,8 @@ Export_FW_DHCP_NVRAM_JFFS()
 	fi
 	"$doCommitNVRAM" && nvram commit
 
-	if [ ! -s "$SCRIPT_CONF" ]
-	then echo "MAC,IP,HOSTNAME,DNS" > "$SCRIPT_CONF"
+	if [ ! -s "$DHCP_Clients_LIST" ]
+	then echo "MAC,IP,HOSTNAME,DNS" > "$DHCP_Clients_LIST"
 	fi
 	sort -t . -k 3,3n -k 4,4n "$yazdhcpExportFile" > /tmp/yazdhcp_SORTED.tmp
 
@@ -3985,7 +4396,7 @@ Export_FW_DHCP_NVRAM_JFFS()
 		if ! Validate_NVRAM_IPaddr_Reservation "$line"
 		then continue
 		fi
-		echo "$line" | awk 'FS="|" { print ""$1","$2","$4","$3""; }' >> "$SCRIPT_CONF"
+		echo "$line" | awk 'FS="|" { print ""$1","$2","$4","$3""; }' >> "$DHCP_Clients_LIST"
 	done < /tmp/yazdhcp_SORTED.tmp
 
 	if [ -s "$yazdhcpExportFile" ]
@@ -4072,7 +4483,7 @@ Update_Hostnames_MainLAN()
 		fi
 
 		echo "$theIPaddr4 $theHostName  $theMACaddrTag" >> "$hostNamesFileUPDT"
-	done < "$SCRIPT_CONF"
+	done < "$DHCP_Clients_LIST"
 }
 
 ##-------------------------------------##
@@ -4175,7 +4586,7 @@ Update_Hostnames_GuestNet()
 			fi
 
 			echo "$theIPaddr4 $theHostName  $theMACaddrTag" >> "$hostNamesFileGUPDT"
-		done < "$SCRIPT_CONF"
+		done < "$DHCP_Clients_LIST"
 
 		if [ "$(_GetFileSizeBytes_ "$hostNamesFileGUPDT")" -ge 3 ]
 		then
@@ -4290,7 +4701,7 @@ Update_StaticList_MainLAN()
 			   echo "${dhcpNetTagStr}${theMACaddr},set:${theMACaddr},${theIPaddr4}${hostNameEntry}"
 			} >> "$staticListFileUPDT"
 		fi
-	done < "$SCRIPT_CONF"
+	done < "$DHCP_Clients_LIST"
 }
 
 ##-------------------------------------##
@@ -4382,7 +4793,7 @@ Update_StaticList_GuestNet()
 				    echo "${dhcpNetTagStr}${theMACaddr},set:${theMACaddr},${theIPaddr4}${hostNameEntry}" 
 				} >> "$staticListFileGUPDT"
 			fi
-		done < "$SCRIPT_CONF"
+		done < "$DHCP_Clients_LIST"
 
 		if [ "$(_GetFileSizeBytes_ "$staticListFileGUPDT")" -ge 3 ]
 		then
@@ -4487,7 +4898,7 @@ Update_OptionsList_MainLAN()
 			   echo "${dhcpNetTagStr}tag:${theMACaddr},6,$theDNSaddr"
 			} >> "$optionsListFileUPDT"
 		fi
-	done < "$SCRIPT_CONF"
+	done < "$DHCP_Clients_LIST"
 }
 
 ##-------------------------------------##
@@ -4575,7 +4986,7 @@ Update_OptionsList_GuestNet()
 				    echo "${dhcpNetTagStr}tag:${theMACaddr},6,$theDNSaddr" 
 				} >> "$optionsListFileGUPDT"
 			fi
-		done < "$SCRIPT_CONF"
+		done < "$DHCP_Clients_LIST"
 
 		if [ "$(_GetFileSizeBytes_ "$optionsListFileGUPDT")" -ge 3 ]
 		then
@@ -4811,8 +5222,8 @@ Process_DHCP_Clients()
 	else RESTART_DNSMASQ=false
 	fi
 
-	if [ ! -s "$SCRIPT_CONF" ] || \
-	   ! grep -qv "MAC,IP,HOSTNAME,DNS" "$SCRIPT_CONF"
+	if [ ! -s "$DHCP_Clients_LIST" ] || \
+	   ! grep -qv "MAC,IP,HOSTNAME,DNS" "$DHCP_Clients_LIST"
 	then
 		printf '' > "$hostNamesFilePATH"
 		printf '' > "$staticListFilePATH"
@@ -5010,7 +5421,7 @@ MainMenu()
 		PressEnter
 	}
 
-	printf "  ${GRNct}1${CLRct}.  Process ${GRNct}${SCRIPT_CONF}${CLRct}\n\n"
+	printf "  ${GRNct}1${CLRct}.  Process ${GRNct}${DHCP_Clients_LIST}${CLRct}\n\n"
 
 	srMenuOptStr="Save/Restore custom user icons"
 	if CheckForCustomIconFiles || CheckForSavedIconFiles
@@ -5193,9 +5604,9 @@ Menu_Install()
 	Create_Symlinks
 
 	httpStr="https"
-	portStr=":$(_NVRAM_Get_ https_lanport)"
+	portStr=":$($NVRAM_Cmd get https_lanport)"
 
-	if [ "$(_NVRAM_Get_ http_enable)" -eq 0 ]
+	if [ "$($NVRAM_Cmd get http_enable)" -eq 0 ]
 	then
 		httpStr="http"
 		portStr=""
@@ -5215,11 +5626,13 @@ Menu_Install()
 
 	Update_File shared-jy.tar.gz
 	Update_File "$LAN_DHCP_SERVER_WEBPAGE"
+	_PromptForMountingModifiedCRU_
+
 	Auto_Startup create 2>/dev/null
 	Auto_ServiceEvent create 2>/dev/null
 	Shortcut_Script create
 
-	echo "MAC,IP,HOSTNAME,DNS" > "$SCRIPT_CONF"
+	echo "MAC,IP,HOSTNAME,DNS" > "$DHCP_Clients_LIST"
 	if ! Export_FW_DHCP_NVRAM_JFFS
 	then
 		_Check_ActiveGuestNetwork_SubnetInfo_
@@ -5257,13 +5670,14 @@ NTP_Ready()
 {
 	local theSleepDelay=15  ntpMaxWaitSecs=600  ntpWaitSecs
 
-	[ "$(_NVRAM_Get_ ntp_ready)" -eq 1 ] && return 0
+	[ "$($NVRAM_Cmd get ntp_ready)" -eq 1 ] && return 0
 
 	Check_Lock
 	ntpWaitSecs=0
 	Print_Output true "Waiting for NTP to sync..." "$WARN"
 
-	while [ "$(_NVRAM_Get_ ntp_ready)" -eq 0 ] && [ "$ntpWaitSecs" -lt "$ntpMaxWaitSecs" ]
+	while [ "$($NVRAM_Cmd get ntp_ready)" -eq 0 ] && \
+	      [ "$ntpWaitSecs" -lt "$ntpMaxWaitSecs" ]
 	do
 		sleep "$theSleepDelay"
 		ntpWaitSecs="$((ntpWaitSecs + theSleepDelay))"
@@ -5273,7 +5687,7 @@ NTP_Ready()
 		fi
 	done
 
-	if [ "$(_NVRAM_Get_ ntp_ready)" -eq 1 ]
+	if [ "$($NVRAM_Cmd get ntp_ready)" -eq 1 ]
 	then
 		Print_Output true "NTP has synced [$ntpWaitSecs secs]. $SCRIPT_NAME will now continue." "$PASS"
 	else
@@ -5296,6 +5710,7 @@ Menu_Startup()
 	fi
 	inStartupMode=true
 	Create_Dirs
+	_CheckStuckCmdsConfig_
 	Set_Version_Custom_Settings local
 	Create_Symlinks 2>/dev/null
 	Auto_Startup create 2>/dev/null
@@ -5367,7 +5782,7 @@ Menu_Uninstall()
 	local max7daySecs=604800
 	local doCommitNVRAM=false
 
-	if [ "$(_NVRAM_Get_ "$DHCP_LEASE_KEYN")" -gt "$max7daySecs" ]
+	if [ "$($NVRAM_Cmd get "$DHCP_LEASE_KEYN")" -gt "$max7daySecs" ]
 	then
 		nvram set ${DHCP_LEASE_KEYN}="$max7daySecs"
 		doCommitNVRAM=true
@@ -5406,7 +5821,7 @@ Check_Requirements()
 {
 	local CHECKSFAILED=false
 
-	if [ "$(_NVRAM_Get_ jffs2_scripts)" -ne 1 ]
+	if [ "$($NVRAM_Cmd get jffs2_scripts)" -ne 1 ]
 	then
 		nvram set jffs2_scripts=1
 		nvram commit
@@ -5455,8 +5870,25 @@ Available commands:
   $SCRIPT_NAME uninstall        uninstalls script
   $SCRIPT_NAME develop          switch to development branch version
   $SCRIPT_NAME stable           switch to stable/production branch version
+
+For handling of stuck 'nvram' and 'wl' commands:
+
+  $SCRIPT_NAME wlCmdLibEnable       Enable library script that handles stuck 'wl' commands  
+  $SCRIPT_NAME wlCmdLibDisable      Disable library script that handles stuck 'wl' commands
+  $SCRIPT_NAME wlCmdLibStatus       Report status of library script that handles stuck 'wl' commands
+
+  $SCRIPT_NAME nvramCmdLibEnable    Enable library script that handles stuck 'nvram' commands 
+  $SCRIPT_NAME nvramCmdLibDisable   Disable library script that handles stuck 'nvram' commands
+  $SCRIPT_NAME nvramCmdLibStatus    Report status of library script that handles stuck 'nvram' commands
+
+  $SCRIPT_NAME cruCmdMountOn        To mount a modified version of the built-in 'cru' script
+  $SCRIPT_NAME cruCmdMountOff       To unmount a modified version of the built-in 'cru' script
+  $SCRIPT_NAME cruCmdMountEnable    To enable mounting a modified version of the built-in 'cru' script
+  $SCRIPT_NAME cruCmdMountDisable   To disable mounting a modified version of the built-in 'cru' script
+  $SCRIPT_NAME cruCmdMountStatus    Reports whether the modified version of the built-in 'cru' script
+                               is mounted or unmounted.
 EOF
-	printf "\n"
+	echo
 }
 
 ##-------------------------------------##
@@ -5644,7 +6076,56 @@ case "$1" in
 		ScriptUpdateFromAMTM "$@"
 		exit "$?"
 	;;
-	setversion)
+	wlCmdLibEnable)
+		_WL_CmdLibHandler_ ENABLE
+		exit 0
+	;;
+	wlCmdLibDisable)
+		_WL_CmdLibHandler_ DISABLE
+		exit 0
+	;;
+	wlCmdLibStatus)
+		_WL_CmdLibHandler_ STATUS
+		exit 0
+	;;
+	nvramCmdLibEnable)
+		_NVRAM_CmdLibHandler_ ENABLE
+		exit 0
+	;;
+	nvramCmdLibDisable)
+		_NVRAM_CmdLibHandler_ DISABLE
+		exit 0
+	;;
+	nvramCmdLibStatus)
+		_NVRAM_CmdLibHandler_ STATUS
+		exit 0
+	;;
+	cruCmdMountOn)
+		_CRU_CmdHandler_ MOUNT
+		exit 0
+	;;
+	cruCmdMountOff)
+		_CRU_CmdHandler_ UNMOUNT
+		exit 0
+	;;
+	cruCmdMountEnable)
+		_CRU_CmdHandler_ ENABLE
+		exit 0
+	;;
+	cruCmdMountDisable)
+		_CRU_CmdHandler_ DISABLE
+		exit 0
+	;;
+	cruCmdMountStatus)
+		_CRU_CmdHandler_ STATUS
+		exit 0
+	;;
+	postupdate)
+		Create_Dirs
+		Create_Symlinks
+		_MoveToSharedLibsDir_
+		_CheckStuckCmdsConfig_
+		_PromptForMountingModifiedCRU_
 		Set_Version_Custom_Settings local
 		Set_Version_Custom_Settings server "$SCRIPT_VERSION"
 		if [ $# -lt 2 ] || [ -z "$2" ]
